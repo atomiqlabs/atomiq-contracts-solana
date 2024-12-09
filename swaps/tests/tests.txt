@@ -1,0 +1,259 @@
+//Deposit
+//SUCCESS:
+//Deposit uninitialized vault
+//Deposit initialized vault
+//Deposit uninitialized user data
+//Deposit initialized user data
+//FAIL:
+//Different signer
+//Uninitialized ATA
+//ATA for other mint
+//ATA with not enough funds
+//UserAccount of other signer
+//UserAccount of other mint
+//UserAccount of other signer & mint
+//Bad mint vault
+//Wrong vault authority
+
+
+//Withdraw
+//SUCCESS:
+//Initialized user data and signer_ata
+//FAIL:
+//Uninitialized signer_ata
+//signer_ata for other mint
+//UserAccount with not enough funds
+//UserAccount of other signer
+//UserAccount of other mint
+//UserAccount of other signer & mint
+//Bad mint vault
+//Wrong vault authority
+
+
+//InitializePayIn
+//SUCCESS:
+//Init with payout true
+//Init with payout false
+//FAIL:
+//data.pay_in = false
+//Expired authorization
+//Wrong escrow state
+//Already initialized escrow state
+//data.confirmations > 200
+//data.kind!=nonced & nonce > 0
+//#IF data.pay_out = true
+//  Uninitialized claimer_ata
+//  claimer_ata of other mint
+//#ELSE
+//  Uninitialized claimer_user_data
+//  UserAccount of other signer
+//  UserAccount of other mint
+//  UserAccount of other signer & mint
+//#END
+
+//Uninitialized offerer ATA
+//offerer ATA for other mint
+//offerer ATA with not enough funds
+//Bad mint vault
+//Wrong vault authority
+
+
+//Initialize
+//SUCCESS:
+//Init with payout true
+//Init with payout false
+//FAIL:
+//data.pay_in = true
+//Expired authorization
+//Wrong escrow state
+//Already initialized escrow state
+//data.confirmations > 200
+//data.kind!=nonced & nonce > 0
+//#IF data.pay_out = true
+//  Uninitialized claimer_ata
+//  claimer_ata of other mint
+//#ELSE
+//  Uninitialized claimer_user_data
+//  claimer_user_data of other signer
+//  claimer_user_data of other mint
+//  claimer_user_data of other signer & mint
+//#END
+
+//Uninitialized offerer_user_data
+//offerer_user_data with not enough funds
+//offerer_user_data of other signer
+//offerer_user_data of other mint
+//offerer_user_data of other signer & mint
+
+
+//Refund
+//SUCCESS:
+//Refund signed
+//Refund expired (timestamp)
+//Refund expired (blockheight)
+//FAIL:
+//Wrong offerer
+//Wrong claimer
+//Wrong escrow_state (data.pay_in = true)
+//#IF (data.pay_out = false)
+//  claimer_user_data of other signer
+//  claimer_user_data of other mint
+//  claimer_user_data of other signer & mint
+//#END
+//#IF (auth_expiry != 0)
+//  Wrong ix_sysvar
+//  Expired auth
+//  No prior verify instruction
+//  Data in verify sig IX is different than expected
+//  Signer in verify sig IX is different than expected
+//#ELSE
+//  #IF escrow_state.data.expiry < BLOCKHEIGHT_EXPIRY_THRESHOLD
+//      Not expired
+//      No prior blockheight verify instruction
+//      Data in blockheight verify IX is different than expected
+//  #ELSE
+//      Not expired
+//  #END
+//#END
+
+//Uninitialized offerer_user_data
+//offerer_user_data of other signer
+//offerer_user_data of other mint
+//offerer_user_data of other signer & mint
+
+
+//RefundPayIn
+//SUCCESS:
+//Refund signed
+//Refund expired (timestamp)
+//Refund expired (blockheight)
+//FAIL:
+//Offerer not signed
+//Wrong offerer
+//Wrong claimer
+//Wrong escrow_state (data.pay_in = false)
+//#IF (data.pay_out = false)
+//  Uninitialized claimer_user_data
+//  claimer_user_data of other signer
+//  claimer_user_data of other mint
+//  claimer_user_data of other signer & mint
+//#END
+//#IF (auth_expiry != 0)
+//  Wrong ix_sysvar
+//  Expired auth
+//  No prior verify instruction
+//  Data in verify sig IX is different than expected
+//  Signer in verify sig IX is different than expected
+//  Signer in verify sig IX is different than expected
+//#ELSE
+//  #IF escrow_state.data.expiry < BLOCKHEIGHT_EXPIRY_THRESHOLD
+//      Not expired
+//      No prior blockheight verify instruction
+//      Data in blockheight verify IX is different than expected
+//  #ELSE
+//      Not expired
+//  #END
+//#END
+
+//Uninitialized offerer_ata
+//offerer_ata for other mint
+//Wrong offerer_ata (not the one specified in escrow_state)
+//Bad mint vault
+//Wrong vault authority
+
+
+//Claim
+//SUCCESS (all should be done with & without additional data account):
+//Claim data.kind=HTLC with secret
+//Claim data.kind=HTLC with secret right padded with garbage (only first 32 bytes should ever be used)
+//Claim data.kind=CHAIN_TXHASH without data
+//Claim data.kind=CHAIN_TXHASH with gibberish data (all data should be ignored for CHAIN_TXHASH)
+//Claim data.kind=CHAIN_NONCED with valid tx
+//Claim data.kind=CHAIN_NONCED with valid big tx (50kB+)
+//Claim data.kind=CHAIN with valid tx
+//Claim data.kind=CHAIN with valid big tx (50kB+)
+//FAIL:
+//Wrong escrow_state (data.pay_out = true)
+//#IF (data.pay_in = true)
+//  Initializer not offerer
+//#ELSE
+//  Initializer not claimer
+//#END
+//Wrong ix_sysvar
+//#IF (accounts.data.is_some() = true)
+//  Invalid data account (belongs to different key)
+//#END
+//#IF (data.kind = HTLC)
+//  Wrong secret
+//  Secret too short (<32 bytes)
+//#ELSE
+//  #IF (data.kind = CHAIN_TX_HASH)
+//      Wrong txid
+//  #ELSE
+//      Wrong transaction
+//      Wrong transaction output
+//      64 bytes transaction
+//      Invalid transaction
+//      #IF (data.kind = CHAIN_NONCED)
+//          Wrong nonce
+//          nSequence in input has consensus meaning (nSequence<0xF0000000)
+//          Inconsistent nonce (inputs have different last 3 bytes of nSequence)          
+//      #END
+//  #END
+//  No prior btcrelay verify instruction
+//  Wrong btcrelay confirmations
+//  Wrong btcrelay txhash verified
+//#END
+
+//Uninitialized claimer_user_data
+//claimer_user_data of other signer
+//claimer_user_data of other mint
+//claimer_user_data of other signer & mint
+
+
+//ClaimPayOut
+//SUCCESS (all should be done with & without additional data account):
+//Claim data.kind=HTLC with secret
+//Claim data.kind=HTLC with secret right padded with garbage (only first 32 bytes should ever be used)
+//Claim data.kind=CHAIN_TXHASH without data
+//Claim data.kind=CHAIN_TXHASH with gibberish data (all data should be ignored for CHAIN_TXHASH)
+//Claim data.kind=CHAIN_NONCED with valid tx
+//Claim data.kind=CHAIN_NONCED with valid big tx (50kB+)
+//Claim data.kind=CHAIN with valid tx
+//Claim data.kind=CHAIN with valid big tx (50kB+)
+//FAIL:
+//Wrong escrow_state (data.pay_out = false)
+//#IF (data.pay_in = true)
+//  Initializer not offerer
+//#ELSE
+//  Initializer not claimer
+//#END
+//Wrong ix_sysvar
+//#IF (accounts.data.is_some() = true)
+//  Invalid data account (belongs to different key)
+//#END
+//#IF (data.kind = HTLC)
+//  Wrong secret
+//  Secret too short (<32 bytes)
+//#ELSE
+//  #IF (data.kind = CHAIN_TX_HASH)
+//      Wrong txid
+//  #ELSE
+//      Wrong transaction
+//      Wrong transaction output
+//      64 bytes transaction
+//      #IF (data.kind = CHAIN_NONCED)
+//          Wrong nonce
+//          nSequence in input has consensus meaning (nSequence<0xF0000000)
+//          Inconsistent nonce (inputs have different last 3 bytes of nSequence)          
+//      #END
+//  #END
+//  No prior btcrelay verify instruction    
+//  Wrong btcrelay confirmations
+//  Wrong btcrelay txhash verified
+//#END
+
+//Uninitialized claimer_ata
+//claimer_ata for other mint
+//Bad mint vault
+//Wrong vault authority

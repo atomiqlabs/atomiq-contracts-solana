@@ -1,0 +1,31 @@
+Pulling liquidity from multiple sources in a single transaction, keeping in mind solana's 1232 byte tx size limit
+
+NO LOOKUP TABLE
+
+block hash - 32 bytes
+
+data size - 104 bytes + n * 8 bytes
+
+accounts - 9 + n * 3 -  288 bytes + n * 96 bytes
+
+signatures - 64 bytes + n * 64 bytes
+
+488 bytes + n * 168 bytes
+
+1200-488 = 712
+712//168 = 4 nodes
+
+
+WITH LOOKUP TABLE
+
+block hash - 32 bytes
+
+data size - 104 bytes + n * 8 bytes
+
+accounts - 9 + n * 3 -  9 bytes + n * 3 bytes
+
+signatures - 64 bytes + n * 64 bytes
+
+209 bytes + n * 75 bytes
+1200-209 = 991
+991/75 = 13 nodes
