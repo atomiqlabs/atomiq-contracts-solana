@@ -689,7 +689,7 @@ async function verifyClaimInvariants(data: ClaimIXData, initialState: ClaimIniti
 
 }
 
-const parallelTest = new ParalelizedTest();
+const parallelTest = new ParalelizedTest(1);
 
 function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWithAccount: boolean) {
 
