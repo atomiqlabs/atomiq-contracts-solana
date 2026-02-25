@@ -39,7 +39,7 @@ export async function getInitializedVault(mintData: TokenMint, depositAmount: BN
     const signature = await provider.connection.sendTransaction(tx, [signer], {
         skipPreflight: true
     });
-    const result = await provider.connection.confirmTransaction(signature);
+    const result = await provider.connection.confirmTransaction(signature, "confirmed");
 
     assert(result.value.err==null, "getInitializedVault(): Transaction error: "+JSON.stringify(result.value.err, null, 4));
 
