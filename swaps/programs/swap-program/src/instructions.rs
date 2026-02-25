@@ -24,7 +24,7 @@ pub struct Deposit<'info> {
         payer = signer,
         space = UserAccount::SPACE
     )]
-    pub user_data: Account<'info, UserAccount>,
+    pub user_data: Box<Account<'info, UserAccount>>,
 
     //Account holding the tokens
     #[account(
@@ -109,7 +109,7 @@ pub struct InitializePayIn<'info> {
          constraint = offerer_ata.amount >= swap_data.amount,
          token::mint = mint
     )]
-    pub offerer_ata: Account<'info, TokenAccount>,
+    pub offerer_ata: Box<Account<'info, TokenAccount>>,
 
     //Data storage account
     #[account(
@@ -132,7 +132,7 @@ pub struct InitializePayIn<'info> {
         token::mint = mint,
         token::authority = vault_authority,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
 
     /// CHECK: This account is not being read from, it is only an authority for the contract token vaults
     #[account(
@@ -142,7 +142,7 @@ pub struct InitializePayIn<'info> {
     pub vault_authority: AccountInfo<'info>,
 
     //Required data
-    pub mint: Account<'info, Mint>,
+    pub mint: Box<Account<'info, Mint>>,
     pub system_program: Program<'info, System>,
     pub token_program: Program<'info, Token>,
     
@@ -153,7 +153,7 @@ pub struct InitializePayIn<'info> {
         seeds = [USER_DATA_SEED, claimer.key.as_ref(), mint.to_account_info().key.as_ref()],
         bump = claimer_user_data.bump
     )]
-    pub claimer_user_data: Option<Account<'info, UserAccount>>,
+    pub claimer_user_data: Option<Box<Account<'info, UserAccount>>>,
 
     ////////////////////////////////////////
     //For pay out
@@ -161,7 +161,7 @@ pub struct InitializePayIn<'info> {
     #[account(
         token::mint = mint
     )]
-    pub claimer_ata: Option<Account<'info, TokenAccount>>,
+    pub claimer_ata: Option<Box<Account<'info, TokenAccount>>>,
 }
 
 #[derive(Accounts)]
@@ -205,7 +205,7 @@ pub struct Initialize<'info> {
         seeds = [USER_DATA_SEED, claimer.key.as_ref(), mint.to_account_info().key.as_ref()],
         bump = claimer_user_data.bump
     )]
-    pub claimer_user_data: Option<Account<'info, UserAccount>>,
+    pub claimer_user_data: Option<Box<Account<'info, UserAccount>>>,
     
     ////////////////////////////////////////
     //For pay out
@@ -213,7 +213,7 @@ pub struct Initialize<'info> {
     #[account(
         token::mint = mint
     )]
-    pub claimer_ata: Option<Account<'info, TokenAccount>>
+    pub claimer_ata: Option<Box<Account<'info, TokenAccount>>>
 }
 
 #[derive(Accounts)]
