@@ -4,7 +4,7 @@ import { AnchorProvider, Program, workspace } from "@coral-xyz/anchor";
 import { SwapProgram } from "../../target/types/swap_program";
 import * as BN from "bn.js";
 import { TokenMint } from "../utils/tokens";
-import { SwapUserVault, SwapVault, SwapVaultAuthority } from "../utils/accounts";
+import { SwapUserVault, SwapVault } from "../utils/accounts";
 import { TOKEN_PROGRAM_ID, closeAccount, getAccount } from "@solana/spl-token";
 import { assert } from "chai";
 
@@ -16,7 +16,6 @@ export async function getInitializedUserData(signer: Keypair, mintData: TokenMin
     const signerAta = await mintData.mintTo(signer.publicKey, depositAmount);
     const userData = SwapUserVault(signer.publicKey, mintData.mint);
     const vault = SwapVault(mintData.mint);
-    const vaultAuthority = SwapVaultAuthority;
     const mint = mintData.mint;
     const systemProgram = SystemProgram.programId;
     const tokenProgram = TOKEN_PROGRAM_ID;
@@ -26,7 +25,6 @@ export async function getInitializedUserData(signer: Keypair, mintData: TokenMin
         signerAta,
         userData,
         vault,
-        vaultAuthority,
         mint,
         systemProgram,
         tokenProgram

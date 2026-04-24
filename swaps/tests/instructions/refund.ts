@@ -4,14 +4,14 @@ import { SwapProgram } from "../../target/types/swap_program";
 import BN from "bn.js";
 import nacl from "tweetnacl";
 import { TokenMint, getNewMint } from "../utils/tokens";
-import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault, SwapVaultAuthority } from "../utils/accounts";
+import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault } from "../utils/accounts";
 import { Account, TOKEN_PROGRAM_ID, getAccount } from "@solana/spl-token";
 import { assert } from "chai";
 import { getInitializedUserData } from "../utils/userData";
 import { randomBytes, createHash } from "crypto";
 import { EscrowStateType, SwapData, SwapType, SwapTypeEnum, getInitializeDefaultDataNotPayIn, getInitializeDefaultDataPayIn, getInitializedEscrowState as _getInitializedEscrowState, initializeDefaultAmount, initializeExecuteNotPayIn, initializeExecutePayIn } from "../utils/escrowState";
 import { BtcRelayMainState, btcRelayProgram } from "../btcrelay/accounts";
-import { ParalelizedTest } from "../utils";
+import { getTxWithRetries, ParalelizedTest } from "../utils";
 import { CombinedProgramErrorType, parseSwapProgramError } from "../utils/program";
 
 const BLOCKHEIGHT_EXPIRY_THRESHOLD = new BN(1000000000);
@@ -65,7 +65,6 @@ type RefundIXAccountsNotPayIn = RefundIXAccounts & {
 type RefundIXAccountsPayIn = RefundIXAccounts & {
     offererAta: PublicKey,
     vault: PublicKey,
-    vaultAuthority: PublicKey,
     tokenProgram: PublicKey
 };
 
@@ -102,7 +101,6 @@ export async function getRefundDefaultDataPayIn(
         offererAta: escrowState.offererAta || escrowState.mint.getATA(escrowState.offerer.publicKey),
         escrowState: SwapEscrowState(Buffer.from(escrowState.data.hash)),
         vault: SwapVault(escrowState.mint.mint),
-        vaultAuthority: SwapVaultAuthority,
         tokenProgram: TOKEN_PROGRAM_ID,
         claimerUserData: null,
         ixSysvar: null,
@@ -171,7 +169,7 @@ export async function getRefundDefaultDataNotPayIn(
     };
 }
 
-export async function refundExecutePayIn(data: RefundIXDataPayIn): Promise<{result: SignatureResult, signature: string, error: CombinedProgramErrorType}> {
+export async function refundExecutePayIn(data: RefundIXDataPayIn, thirdPartySigner?: boolean): Promise<{result: SignatureResult, signature: string, error: CombinedProgramErrorType}> {
     
     const ix = await program.methods.offererRefundPayIn(
         data.params.authExpiry
@@ -181,7 +179,6 @@ export async function refundExecutePayIn(data: RefundIXDataPayIn): Promise<{resu
         offererAta: data.accounts.offererAta,
         escrowState: data.accounts.escrowState,
         vault: data.accounts.vault,
-        vaultAuthority: data.accounts.vaultAuthority,
         tokenProgram: data.accounts.tokenProgram,
         claimerUserData: data.accounts.claimerUserData,
         ixSysvar: data.accounts.ixSysvar
@@ -197,18 +194,23 @@ export async function refundExecutePayIn(data: RefundIXDataPayIn): Promise<{resu
         }));
     }
 
+    let signer = data.accounts.offerer;
+    if(thirdPartySigner) {
+        signer = Keypair.generate();
+        await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(signer.publicKey, 1_000_000_000));
+    }
+
     if(data.blockheightLock!=null) {
         tx.add(await btcRelayProgram.methods.blockHeight(data.blockheightLock.blockheight.toNumber(), data.blockheightLock.operator).accounts({
-            signer: data.accounts.offerer.publicKey,
+            signer: signer.publicKey,
             mainState: BtcRelayMainState
         }).instruction());
     }
 
     tx.add(ix);
 
-    tx.feePayer = data.accounts.offerer.publicKey;
-
-    const signature = await provider.connection.sendTransaction(tx, [data.accounts.offerer], {
+    tx.feePayer = signer.publicKey;
+    const signature = await provider.connection.sendTransaction(tx, [signer], {
         skipPreflight: true
     });
     const result = await provider.connection.confirmTransaction(signature);
@@ -221,7 +223,7 @@ export async function refundExecutePayIn(data: RefundIXDataPayIn): Promise<{resu
 
 }
 
-export async function refundExecuteNotPayIn(data: RefundIXDataNotPayIn): Promise<{result: SignatureResult, signature: string, error: CombinedProgramErrorType}> {
+export async function refundExecuteNotPayIn(data: RefundIXDataNotPayIn, thirdPartySigner?: boolean): Promise<{result: SignatureResult, signature: string, error: CombinedProgramErrorType}> {
 
     const ix = await program.methods.offererRefund(
         data.params.authExpiry
@@ -244,18 +246,23 @@ export async function refundExecuteNotPayIn(data: RefundIXDataNotPayIn): Promise
         }));
     }
 
+    let signer = data.accounts.offerer;
+    if(thirdPartySigner) {
+        signer = Keypair.generate();
+        await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(signer.publicKey, 1_000_000_000));
+    }
+
     if(data.blockheightLock!=null) {
         tx.add(await btcRelayProgram.methods.blockHeight(data.blockheightLock.blockheight.toNumber(), data.blockheightLock.operator).accounts({
-            signer: data.accounts.offerer.publicKey,
+            signer: signer.publicKey,
             mainState: BtcRelayMainState
         }).instruction());
     }
 
     tx.add(ix);
 
-    tx.feePayer = data.accounts.offerer.publicKey;
-
-    const signature = await provider.connection.sendTransaction(tx, [data.accounts.offerer], {
+    tx.feePayer = signer.publicKey;
+    const signature = await provider.connection.sendTransaction(tx, [signer], {
         skipPreflight: true
     });
     const result = await provider.connection.confirmTransaction(signature);
@@ -271,7 +278,7 @@ export async function refundExecuteNotPayIn(data: RefundIXDataNotPayIn): Promise
 const parallelTest = new ParalelizedTest();
 
 function runTestsWith(payIn: boolean, payOut: boolean, refundType: "signed" | "timestamp" | "blockheight") {
-    const prefix = "[payIn:"+payIn+" payOut:"+payOut+" "+refundType+"] ";
+    const prefix = "Refund [payIn:"+payIn+" payOut:"+payOut+" "+refundType+"] ";
 
     const getInitializedEscrowState = (
         _payIn: boolean = payIn,
@@ -298,9 +305,9 @@ function runTestsWith(payIn: boolean, payOut: boolean, refundType: "signed" | "t
             getRefundDefaultDataPayIn(escrowState, refundType==="signed" ? new BN(Math.floor(Date.now()/1000) + 3600) : undefined) :
             getRefundDefaultDataNotPayIn(escrowState, refundType==="signed" ? new BN(Math.floor(Date.now()/1000) + 3600) : undefined);
     }
-    const refundExecute: (data: RefundIXData) => Promise<{result: SignatureResult, signature: string, error: CombinedProgramErrorType}> = payIn ? refundExecutePayIn : refundExecuteNotPayIn;
+    const refundExecute: (data: RefundIXData, thirdPartySigner?: boolean) => Promise<{result: SignatureResult, signature: string, error: CombinedProgramErrorType}> = payIn ? refundExecutePayIn : refundExecuteNotPayIn;
 
-    parallelTest.it(prefix+"Success refund", async () => {
+    const successfulRefund = (thirdPartySigner: boolean) => async () => {
         const escrowStateData = await getInitializedEscrowState();
         const data = await getRefundDefaultData(escrowStateData);
         
@@ -329,7 +336,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, refundType: "signed" | "t
             initialClaimerUserData = await program.account.userAccount.fetchNullable(data.accounts.claimerUserData);
         }
 
-        const {result, signature} = await refundExecute(data);
+        const {result, signature} = await refundExecute(data, thirdPartySigner);
         assert(result.err==null, "Transaction error: "+JSON.stringify(result.err, null, 4));
 
         const escrowState = await program.account.escrowState.fetchNullable(data.accounts.escrowState);
@@ -366,7 +373,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, refundType: "signed" | "t
         const postOffererLamports = await provider.connection.getBalance(data.accounts.offerer.publicKey);
         const postClaimerLamports = await provider.connection.getBalance(data.accounts.claimer.publicKey);
 
-        const txFee = (refundType==="signed" ? 2 : 1)*lamportsPerSignature;
+        const txFee = thirdPartySigner ? 0 : (refundType==="signed" ? 2 : 1)*lamportsPerSignature;
 
         if(payIn) {
             assert(initialOffererLamports+pdaLamports-txFee===postOffererLamports, "Invalid offerer lamport balance, expected: "+(initialOffererLamports+pdaLamports-txFee)+" got: "+postOffererLamports);
@@ -378,9 +385,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, refundType: "signed" | "t
             assert(initialClaimerLamports+pdaLamports-securityDeposit===postClaimerLamports, "Invalid claimer lamport balance, expected: "+(initialClaimerLamports+pdaLamports-securityDeposit)+" got: "+postClaimerLamports);
         }
         //Check that event was emitted
-        const tx = await provider.connection.getTransaction(signature, {
-            commitment: "confirmed"
-        });
+        const tx = await getTxWithRetries(provider, signature);
         
         const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -399,7 +404,10 @@ function runTestsWith(payIn: boolean, payOut: boolean, refundType: "signed" | "t
         }
 
         assert(eventFound, "Event: not emitted!");
-    });
+    };
+
+    parallelTest.it(prefix+"Success refund", successfulRefund(false));
+    parallelTest.it(prefix+"Success refund (3rd party signer)", successfulRefund(true));
 
     parallelTest.it(prefix+"Wrong offerer", async () => {
         const escrowStateData = await getInitializedEscrowState();

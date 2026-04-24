@@ -3,13 +3,13 @@ import { AnchorProvider, EventParser, Program, workspace, Event, IdlEvents } fro
 import { SwapProgram } from "../../target/types/swap_program";
 import BN, { min } from "bn.js";
 import { TokenMint, getNewMint } from "../utils/tokens";
-import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault, SwapVaultAuthority } from "../utils/accounts";
+import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault } from "../utils/accounts";
 import { Account, TOKEN_PROGRAM_ID, getAccount } from "@solana/spl-token";
 import { assert } from "chai";
 import { getInitializedUserData } from "../utils/userData";
 import { randomBytes } from "crypto";
 import { InitializeIXData, InitializeIXDataNotPayIn, InitializeIXDataPayIn, SwapData, SwapType, SwapTypeEnum, getInitializeDefaultDataNotPayIn, getInitializeDefaultDataPayIn, initializeDefaultAmount, initializeExecuteNotPayIn, initializeExecutePayIn } from "../utils/escrowState";
-import { ParalelizedTest } from "../utils";
+import { getTxWithRetries, ParalelizedTest } from "../utils";
 import { CombinedProgramErrorType } from "../utils/program";
 import { getInitializedVault } from "../utils/vault";
 
@@ -50,7 +50,6 @@ function runCommonTest(
         if(data.params.swapData.payIn) {
             (data as InitializeIXDataPayIn).accounts.offererAta = await data.mintData.mintTo(data.accounts.offerer.publicKey, initializeDefaultAmount);
             (data as InitializeIXDataPayIn).accounts.vault = SwapVault(data.mintData.mint);
-            (data as InitializeIXDataPayIn).accounts.vaultAuthority = SwapVaultAuthority;
             (data as InitializeIXDataPayIn).accounts.tokenProgram = TOKEN_PROGRAM_ID;
         } else {
             (data as InitializeIXDataNotPayIn).accounts.offererUserData = await getInitializedUserData(data.accounts.offerer, data.mintData, initializeDefaultAmount);
@@ -91,9 +90,6 @@ function runCommonTest(
         const data2 = await getDefaultInitializeData(true, undefined, undefined, undefined, undefined, Buffer.from(data.params.swapData.hash));
         
         const {result: result2, signature: signature2, error} = await execute(data2);
-
-        // const txData = await provider.connection.getTransaction(signature2, { commitment: "confirmed" });
-        // console.log("Transaction logs: ", txData.meta.logMessages);
 
         assert(error==="AccountAlreadyInitialized", "Invalid transaction error ("+error+"): "+JSON.stringify(result2.err));
     });
@@ -222,11 +218,11 @@ describe("swap-program: Initialize", () => {
             assert(escrowState.offerer.equals(data.accounts.offerer.publicKey), "Escrow: Invalid offerer!");
             assert(escrowState.offererAta.equals(PublicKey.default), "Escrow: Invalid offererAta!");
             assert(escrowState.securityDeposit.eq(data.params.securityDeposit), "Escrow: Invalid securityDeposit!");
+            assert(!escrowState.offererInitializer, "Escrow: Invalid offererInitializer!");
             
             //Check that event was emitted
-            const tx = await provider.connection.getTransaction(signature, {
-                commitment: "confirmed"
-            });
+
+            const tx = await getTxWithRetries(provider, signature);
             
             const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -277,11 +273,10 @@ describe("swap-program: Initialize", () => {
             assert(escrowState.offerer.equals(data.accounts.offerer.publicKey), "Escrow: Invalid offerer!");
             assert(escrowState.offererAta.equals(PublicKey.default), "Escrow: Invalid offererAta!");
             assert(escrowState.securityDeposit.eq(data.params.securityDeposit), "Escrow: Invalid securityDeposit!");
+            assert(!escrowState.offererInitializer, "Escrow: Invalid offererInitializer!");
             
             //Check that event was emitted
-            const tx = await provider.connection.getTransaction(signature, {
-                commitment: "confirmed"
-            });
+            const tx = await getTxWithRetries(provider, signature);
             
             const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -401,11 +396,10 @@ describe("swap-program: Initialize", () => {
             assert(escrowState.offerer.equals(data.accounts.offerer.publicKey), "Escrow: Invalid offerer!");
             assert(escrowState.offererAta.equals(data.accounts.offererAta), "Escrow: Invalid offererAta!");
             assert(escrowState.securityDeposit.eq(new BN(0)), "Escrow: Invalid securityDeposit!");
+            assert(escrowState.offererInitializer, "Escrow: Invalid offererInitializer!");
             
             //Check that event was emitted
-            const tx = await provider.connection.getTransaction(signature, {
-                commitment: "confirmed"
-            });
+            const tx = await getTxWithRetries(provider, signature);
             
             const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -461,11 +455,10 @@ describe("swap-program: Initialize", () => {
             assert(escrowState.offerer.equals(data.accounts.offerer.publicKey), "Escrow: Invalid offerer!");
             assert(escrowState.offererAta.equals(data.accounts.offererAta), "Escrow: Invalid offererAta!");
             assert(escrowState.securityDeposit.eq(new BN(0)), "Escrow: Invalid securityDeposit!");
+            assert(escrowState.offererInitializer, "Escrow: Invalid offererInitializer!");
             
             //Check that event was emitted
-            const tx = await provider.connection.getTransaction(signature, {
-                commitment: "confirmed"
-            });
+            const tx = await getTxWithRetries(provider, signature);
             
             const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -529,16 +522,6 @@ describe("swap-program: Initialize", () => {
 
             const otherMint = await getNewMint();
             data.accounts.vault = await getInitializedVault(otherMint, initializeDefaultAmount);
-
-            const {result, signature, error} = await initializeExecutePayIn(data);
-
-            assert(error==="ConstraintSeeds", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
-        });
-        
-        parallelTest.it(prefix+"Wrong vault authority", async () => {
-            const data = await getInitializeDefaultDataPayIn(true);
-
-            data.accounts.vaultAuthority = RandomPDA();
 
             const {result, signature, error} = await initializeExecutePayIn(data);
 

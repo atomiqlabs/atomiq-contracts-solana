@@ -11,8 +11,8 @@ swap_program = "4hfUykhqmD7ZRvNh1HuzVKEY7ToENixtdUKZspNDCrEM"
 url = "https://anchor.projectserum.com"
 
 [provider]
-cluster = "mainnet"
+cluster = "localnet"
 wallet = "~/mainnet.key"
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/instructions/*.ts"
+test = "npx ts-mocha -p ./tsconfig.json -t 1000000 tests/instructions/*.ts"

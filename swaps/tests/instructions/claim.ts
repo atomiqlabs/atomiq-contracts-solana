@@ -4,14 +4,14 @@ import { SwapProgram } from "../../target/types/swap_program";
 import BN from "bn.js";
 import nacl from "tweetnacl";
 import { TokenMint, getNewMint } from "../utils/tokens";
-import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault, SwapVaultAuthority } from "../utils/accounts";
+import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault } from "../utils/accounts";
 import { Account, TOKEN_PROGRAM_ID, getAccount } from "@solana/spl-token";
 import { assert } from "chai";
 import { getInitializedUserData } from "../utils/userData";
 import { randomBytes, createHash } from "crypto";
 import { EscrowStateType, SwapData, SwapType, SwapTypeEnum, getInitializeDefaultDataPayIn, getInitializedEscrowState, initializeDefaultAmount } from "../utils/escrowState";
 import { BtcRelayMainState, CommittedHeader, btcRelayProgram } from "../btcrelay/accounts";
-import { ParalelizedTest } from "../utils";
+import { getTxWithRetries, ParalelizedTest } from "../utils";
 import * as bitcoin from "bitcoinjs-lib";
 import { AnchorErrorCodes, CombinedProgramErrorType, SwapProgramError, parseSwapProgramError } from "../utils/program";
 import { getInitializedVault } from "../utils/vault";
@@ -97,7 +97,8 @@ type ClaimIXParams = {
 
 type ClaimIXAccounts = {
     signer: Keypair,
-    initializer: Keypair,
+    offerer: Keypair,
+    claimer: Keypair,
     escrowState: PublicKey,
     ixSysvar: PublicKey,
     data?: Keypair
@@ -108,7 +109,6 @@ type ClaimIXAccountsNotPayOut = ClaimIXAccounts & {
 type ClaimIXAccountsPayOut = ClaimIXAccounts & {
     claimerAta: PublicKey,
     vault: PublicKey,
-    vaultAuthority: PublicKey,
     tokenProgram: PublicKey
 };
 
@@ -238,7 +238,8 @@ export async function getClaimDefaultData(
 
     const _accounts: ClaimIXAccounts = {
         signer: signer,
-        initializer: payIn ? escrowStateData.offerer : escrowStateData.claimer,
+        offerer: escrowStateData.offerer,
+        claimer: escrowStateData.claimer,
         escrowState: SwapEscrowState(hash),
         ixSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
         data: null
@@ -263,7 +264,6 @@ export async function getClaimDefaultData(
         const accounts = _accounts as ClaimIXAccountsPayOut;
         accounts.claimerAta = escrowStateData.claimerAta;
         accounts.vault = SwapVault(escrowStateData.mint.mint);
-        accounts.vaultAuthority = SwapVaultAuthority;
         accounts.tokenProgram = TOKEN_PROGRAM_ID;
 
         return {
@@ -381,12 +381,12 @@ export async function claimExecutePayOut(
         Buffer.from(data.params.secret || [])
     ).accounts({
         signer: data.accounts.signer.publicKey,
-        initializer: data.accounts.initializer.publicKey,
+        offerer: data.accounts.offerer.publicKey,
+        claimer: data.accounts.claimer.publicKey,
         escrowState: data.accounts.escrowState,
         ixSysvar: data.accounts.ixSysvar,
         claimerAta: data.accounts.claimerAta,
         vault: data.accounts.vault,
-        vaultAuthority: data.accounts.vaultAuthority,
         tokenProgram: data.accounts.tokenProgram,
         data: data.accounts.data==null ? null : data.accounts.data.publicKey
     }).instruction();
@@ -524,7 +524,8 @@ export async function claimExecuteNotPayOut(
         Buffer.from(data.params.secret || [])
     ).accounts({
         signer: data.accounts.signer.publicKey,
-        initializer: data.accounts.initializer.publicKey,
+        offerer: data.accounts.offerer.publicKey,
+        claimer: data.accounts.claimer.publicKey,
         escrowState: data.accounts.escrowState,
         ixSysvar: data.accounts.ixSysvar,
         claimerUserData: data.accounts.claimerUserData,
@@ -659,9 +660,7 @@ async function verifyClaimInvariants(data: ClaimIXData, initialState: ClaimIniti
     }
     
     //Check that event was emitted
-    const tx = await provider.connection.getTransaction(signature, {
-        commitment: "confirmed"
-    });
+    const tx = await getTxWithRetries(provider, signature);
     
     const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -693,7 +692,7 @@ const parallelTest = new ParalelizedTest();
 
 function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWithAccount: boolean) {
 
-    const prefix = "[payIn: "+payIn+" payOut: "+payOut+" kind: "+kind+" claimWithAccount: "+claimWithAccount+"] "
+    const prefix = "Claim [payIn: "+payIn+" payOut: "+payOut+" kind: "+kind+" claimWithAccount: "+claimWithAccount+"] "
 
     const claimExecute: (data: ClaimIXData) => Promise<{result: SignatureResult, signature: string, signerPreBalance: number, error: CombinedProgramErrorType}> = payOut ? claimExecutePayOut : claimExecuteNotPayOut;
 
@@ -805,7 +804,6 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
             const data = _data as ClaimIXDataPayOut;
             data.accounts.claimerAta = await data.escrowState.mint.mintTo(data.escrowState.claimer.publicKey, initializeDefaultAmount);
             data.accounts.vault = await getInitializedVault(data.escrowState.mint, initializeDefaultAmount);
-            data.accounts.vaultAuthority = SwapVaultAuthority;
             data.accounts.tokenProgram = TOKEN_PROGRAM_ID;
         }
 
@@ -814,20 +812,20 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
         assert(error==="ConstraintRaw", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
     });
 
-    parallelTest.it(prefix+"Wrong initializer (random)", async () => {
+    parallelTest.it(prefix+"Wrong offerer (random)", async () => {
         const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
 
-        data.accounts.initializer = Keypair.generate();
+        data.accounts.offerer = Keypair.generate();
 
         const {result, signature, signerPreBalance, error} = await claimExecute(data);
 
         assert(error==="ConstraintRaw", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
     });
 
-    parallelTest.it(prefix+"Wrong initializer (switched)", async () => {
+    parallelTest.it(prefix+"Wrong claimer (random)", async () => {
         const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
 
-        data.accounts.initializer = payIn ? data.escrowState.claimer : data.escrowState.offerer;
+        data.accounts.claimer = Keypair.generate();
 
         const {result, signature, signerPreBalance, error} = await claimExecute(data);
 
@@ -1278,16 +1276,6 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
     
             const otherMint = await getNewMint();
             data.accounts.vault = await getInitializedVault(otherMint, initializeDefaultAmount);
-
-            const {result, signature, signerPreBalance, error} = await claimExecute(data);
-    
-            assert(error==="ConstraintSeeds", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
-        });
-
-        parallelTest.it(prefix+"Wrong vault authority", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount) as ClaimIXDataPayOut;
-    
-            data.accounts.vaultAuthority = RandomPDA();
 
             const {result, signature, signerPreBalance, error} = await claimExecute(data);
     
