@@ -690,7 +690,7 @@ const parallelTest = new ParalelizedTest();
 
 function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWithAccount: boolean) {
 
-    const prefix = "[payIn: "+payIn+" payOut: "+payOut+" kind: "+kind+" claimWithAccount: "+claimWithAccount+"] "
+    const prefix = "Claim [payIn: "+payIn+" payOut: "+payOut+" kind: "+kind+" claimWithAccount: "+claimWithAccount+"] "
 
     const claimExecute: (data: ClaimIXData) => Promise<{result: SignatureResult, signature: string, signerPreBalance: number, error: CombinedProgramErrorType}> = payOut ? claimExecutePayOut : claimExecuteNotPayOut;
 

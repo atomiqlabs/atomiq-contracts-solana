@@ -101,7 +101,7 @@ pub fn verify_timeout(escrow_state: &Account<EscrowState>, ix_sysvar: &Option<Ac
 }
 
 //Pays out security deposit to offerer & pays the rest back to initializer
-pub fn pay_security_deposit<'info>(escrow_state: &mut Account<'info, EscrowState>, offerer: &mut Signer<'info>, claimer: &mut AccountInfo<'info>, is_cooperative: bool) -> Result<()> {
+pub fn pay_security_deposit<'info>(escrow_state: &mut Account<'info, EscrowState>, offerer: &mut AccountInfo<'info>, claimer: &mut AccountInfo<'info>, is_cooperative: bool) -> Result<()> {
 
     let initializer = if escrow_state.data.pay_in { offerer.to_account_info() } else { claimer.to_account_info() };
     if is_cooperative {
