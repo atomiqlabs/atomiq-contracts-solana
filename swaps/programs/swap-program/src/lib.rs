@@ -32,7 +32,7 @@ pub fn now_ts() -> Result<u64> {
     Ok(clock::Clock::get().unwrap().unix_timestamp.try_into().unwrap())
 }
 
-const AUTHORITY_SEED: &[u8] = b"authority";
+const VAULT_SEED: &[u8] = b"vault";
 const USER_DATA_SEED: &[u8] = b"uservault";
 const BLOCKHEIGHT_EXPIRY_THRESHOLD: u64 = 1000000000; //If expiry is < BLOCKHEIGHT_EXPIRY_THRESHOLD it is considered as expressed in blockheight instead of timestamp
 
@@ -65,13 +65,13 @@ pub mod swap_program {
         ctx: Context<Withdraw>,
         amount: u64,
     ) -> Result<()> {
-        let authority_seeds = &[AUTHORITY_SEED, &[ctx.bumps.vault_authority]];
+        let vault_seeds = &[VAULT_SEED, ctx.accounts.mint.to_account_info().key.as_ref(), &[ctx.bumps.vault]];
 
         if amount>0 {
             token::transfer(
                 ctx.accounts
                     .get_transfer_to_signer_context()
-                    .with_signer(&[&authority_seeds[..]]),
+                    .with_signer(&[&vault_seeds[..]]),
                 amount,
             )?;
         }
@@ -193,12 +193,12 @@ pub mod swap_program {
         let is_cooperative = ixs::refund::process_refund(auth_expiry, &ctx.accounts.escrow_state, &ctx.accounts.ix_sysvar, &mut ctx.accounts.claimer_user_data)?;
 
         //Refund in token to external wallet
-        let authority_seeds = &[AUTHORITY_SEED, &[ctx.bumps.vault_authority]];
+        let vault_seeds = &[VAULT_SEED, ctx.accounts.escrow_state.mint.as_ref(), &[ctx.bumps.vault]];
 
         token::transfer(
             ctx.accounts
                 .get_transfer_to_initializer_context()
-                .with_signer(&[&authority_seeds[..]]),
+                .with_signer(&[&vault_seeds[..]]),
             ctx.accounts.escrow_state.data.amount,
         )?;
 
@@ -225,12 +225,12 @@ pub mod swap_program {
     pub fn claimer_claim_pay_out(ctx: Context<ClaimPayOut>, secret: Vec<u8>) -> Result<()> {
         ixs::claim::process_claim(&ctx.accounts.signer, &ctx.accounts.escrow_state.data, &ctx.accounts.ix_sysvar, &mut ctx.accounts.data, &secret)?;
 
-        let authority_seeds = &[AUTHORITY_SEED, &[ctx.bumps.vault_authority]];
+        let vault_seeds = &[VAULT_SEED, ctx.accounts.escrow_state.mint.as_ref(), &[ctx.bumps.vault]];
 
         token::transfer(
             ctx.accounts
                 .get_transfer_to_claimer_context()
-                .with_signer(&[&authority_seeds[..]]),
+                .with_signer(&[&vault_seeds[..]]),
             ctx.accounts.escrow_state.data.amount,
         )?;
 

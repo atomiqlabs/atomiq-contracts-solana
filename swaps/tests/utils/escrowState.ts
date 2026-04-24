@@ -3,7 +3,7 @@ import { AnchorProvider, EventParser, Program, workspace, Event, IdlEvents } fro
 import { SwapProgram } from "../../target/types/swap_program";
 import BN, { min } from "bn.js";
 import { TokenMint, getNewMint } from "../utils/tokens";
-import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault, SwapVaultAuthority } from "../utils/accounts";
+import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault } from "../utils/accounts";
 import { Account, TOKEN_PROGRAM_ID, getAccount } from "@solana/spl-token";
 import { assert } from "chai";
 import { getInitializedUserData } from "../utils/userData";
@@ -108,7 +108,6 @@ export type InitializeIXAccountsNotPayIn = InitializeIXAccounts & {
 export type InitializeIXAccountsPayIn = InitializeIXAccounts & {
     offererAta: PublicKey,
     vault: PublicKey,
-    vaultAuthority: PublicKey,
     tokenProgram: PublicKey
 };
 
@@ -225,7 +224,6 @@ export async function getInitializeDefaultDataPayIn(
     const offererAta = mintData.getATA(offerer.publicKey);
     const escrowState = SwapEscrowState(hash);
     const vault = SwapVault(mintData.mint);
-    const vaultAuthority = SwapVaultAuthority;
     const tokenProgram = TOKEN_PROGRAM_ID;
     const mint = mintData.mint;
     const systemProgram = SystemProgram.programId;
@@ -240,7 +238,6 @@ export async function getInitializeDefaultDataPayIn(
         claimerAta: null,
         claimerUserData: null,
         vault,
-        vaultAuthority,
         tokenProgram
     }
 
@@ -316,7 +313,6 @@ export async function initializeExecutePayIn(data: InitializeIXDataPayIn): Promi
         offererAta: data.accounts.offererAta,
         escrowState: data.accounts.escrowState,
         vault: data.accounts.vault,
-        vaultAuthority: data.accounts.vaultAuthority,
         tokenProgram: data.accounts.tokenProgram,
         mint: data.accounts.mint,
         systemProgram: data.accounts.systemProgram,

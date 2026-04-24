@@ -33,16 +33,9 @@ pub struct Deposit<'info> {
         bump,
         payer = signer,
         token::mint = mint,
-        token::authority = vault_authority,
+        token::authority = vault,
     )]
     pub vault: Account<'info, TokenAccount>,
-
-    /// CHECK: This account is not being read from, it is only an authority for the contract token vaults
-    #[account(
-        seeds = [b"authority".as_ref()],
-        bump
-    )]
-    pub vault_authority: AccountInfo<'info>,
     
     //Required data
     pub mint: Account<'info, Mint>,
@@ -78,16 +71,9 @@ pub struct Withdraw<'info> {
         seeds = [b"vault".as_ref(), mint.to_account_info().key.as_ref()],
         bump,
         token::mint = mint,
-        token::authority = vault_authority,
+        token::authority = vault,
     )]
     pub vault: Account<'info, TokenAccount>,
-
-    /// CHECK: This account is not being read from, it is only an authority for the contract token vaults
-    #[account(
-        seeds = [b"authority".as_ref()],
-        bump
-    )]
-    pub vault_authority: AccountInfo<'info>,
 
     //Required data
     pub mint: Account<'info, Mint>,
@@ -130,16 +116,9 @@ pub struct InitializePayIn<'info> {
         bump,
         payer = offerer,
         token::mint = mint,
-        token::authority = vault_authority,
+        token::authority = vault,
     )]
     pub vault: Account<'info, TokenAccount>,
-
-    /// CHECK: This account is not being read from, it is only an authority for the contract token vaults
-    #[account(
-        seeds = [b"authority".as_ref()],
-        bump
-    )]
-    pub vault_authority: AccountInfo<'info>,
 
     //Required data
     pub mint: Account<'info, Mint>,
@@ -295,12 +274,6 @@ pub struct RefundPayIn<'info> {
         bump,
     )]
     pub vault: Account<'info, TokenAccount>,
-    /// CHECK: This account is not being read from, it is only an authority for the contract token vaults
-    #[account(
-        seeds = [b"authority".as_ref()],
-        bump
-    )]
-    pub vault_authority: AccountInfo<'info>,
     pub token_program: Program<'info, Token>,
 
     ////////////////////////////////////////
@@ -390,12 +363,6 @@ pub struct ClaimPayOut<'info> {
         bump,
     )]
     pub vault: Box<Account<'info, TokenAccount>>,
-    /// CHECK: This account is not being read from, it is only an authority for the contract token vaults
-    #[account(
-        seeds = [b"authority".as_ref()],
-        bump
-    )]
-    pub vault_authority: AccountInfo<'info>,
     pub token_program: Program<'info, Token>,
 
     ///////////////////////////////////////////
@@ -455,7 +422,7 @@ impl<'info> Withdraw<'info> {
         let cpi_accounts = Transfer {
             from: self.vault.to_account_info(),
             to: self.signer_ata.to_account_info(),
-            authority: self.vault_authority.clone(),
+            authority: self.vault.to_account_info(),
         };
         CpiContext::new(self.token_program.to_account_info(), cpi_accounts)
     }
@@ -479,7 +446,7 @@ impl<'info> RefundPayIn<'info> {
         let cpi_accounts = Transfer {
             from: self.vault.to_account_info(),
             to: self.offerer_ata.to_account_info(),
-            authority: self.vault_authority.clone(),
+            authority: self.vault.to_account_info(),
         };
         CpiContext::new(self.token_program.to_account_info(), cpi_accounts)
     }
@@ -490,7 +457,7 @@ impl<'info> ClaimPayOut<'info> {
         let cpi_accounts = Transfer {
             from: self.vault.to_account_info(),
             to: self.claimer_ata.to_account_info(),
-            authority: self.vault_authority.clone(),
+            authority: self.vault.to_account_info(),
         };
         CpiContext::new(self.token_program.to_account_info(), cpi_accounts)
     }

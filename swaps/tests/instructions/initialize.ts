@@ -3,7 +3,7 @@ import { AnchorProvider, EventParser, Program, workspace, Event, IdlEvents } fro
 import { SwapProgram } from "../../target/types/swap_program";
 import BN, { min } from "bn.js";
 import { TokenMint, getNewMint } from "../utils/tokens";
-import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault, SwapVaultAuthority } from "../utils/accounts";
+import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault } from "../utils/accounts";
 import { Account, TOKEN_PROGRAM_ID, getAccount } from "@solana/spl-token";
 import { assert } from "chai";
 import { getInitializedUserData } from "../utils/userData";
@@ -50,7 +50,6 @@ function runCommonTest(
         if(data.params.swapData.payIn) {
             (data as InitializeIXDataPayIn).accounts.offererAta = await data.mintData.mintTo(data.accounts.offerer.publicKey, initializeDefaultAmount);
             (data as InitializeIXDataPayIn).accounts.vault = SwapVault(data.mintData.mint);
-            (data as InitializeIXDataPayIn).accounts.vaultAuthority = SwapVaultAuthority;
             (data as InitializeIXDataPayIn).accounts.tokenProgram = TOKEN_PROGRAM_ID;
         } else {
             (data as InitializeIXDataNotPayIn).accounts.offererUserData = await getInitializedUserData(data.accounts.offerer, data.mintData, initializeDefaultAmount);
@@ -529,16 +528,6 @@ describe("swap-program: Initialize", () => {
 
             const otherMint = await getNewMint();
             data.accounts.vault = await getInitializedVault(otherMint, initializeDefaultAmount);
-
-            const {result, signature, error} = await initializeExecutePayIn(data);
-
-            assert(error==="ConstraintSeeds", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
-        });
-        
-        parallelTest.it(prefix+"Wrong vault authority", async () => {
-            const data = await getInitializeDefaultDataPayIn(true);
-
-            data.accounts.vaultAuthority = RandomPDA();
 
             const {result, signature, error} = await initializeExecutePayIn(data);
 

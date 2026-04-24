@@ -4,7 +4,7 @@ import { SwapProgram } from "../../target/types/swap_program";
 import BN from "bn.js";
 import nacl from "tweetnacl";
 import { TokenMint, getNewMint } from "../utils/tokens";
-import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault, SwapVaultAuthority } from "../utils/accounts";
+import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault } from "../utils/accounts";
 import { Account, TOKEN_PROGRAM_ID, getAccount } from "@solana/spl-token";
 import { assert } from "chai";
 import { getInitializedUserData } from "../utils/userData";
@@ -108,7 +108,6 @@ type ClaimIXAccountsNotPayOut = ClaimIXAccounts & {
 type ClaimIXAccountsPayOut = ClaimIXAccounts & {
     claimerAta: PublicKey,
     vault: PublicKey,
-    vaultAuthority: PublicKey,
     tokenProgram: PublicKey
 };
 
@@ -263,7 +262,6 @@ export async function getClaimDefaultData(
         const accounts = _accounts as ClaimIXAccountsPayOut;
         accounts.claimerAta = escrowStateData.claimerAta;
         accounts.vault = SwapVault(escrowStateData.mint.mint);
-        accounts.vaultAuthority = SwapVaultAuthority;
         accounts.tokenProgram = TOKEN_PROGRAM_ID;
 
         return {
@@ -386,7 +384,6 @@ export async function claimExecutePayOut(
         ixSysvar: data.accounts.ixSysvar,
         claimerAta: data.accounts.claimerAta,
         vault: data.accounts.vault,
-        vaultAuthority: data.accounts.vaultAuthority,
         tokenProgram: data.accounts.tokenProgram,
         data: data.accounts.data==null ? null : data.accounts.data.publicKey
     }).instruction();
@@ -805,7 +802,6 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
             const data = _data as ClaimIXDataPayOut;
             data.accounts.claimerAta = await data.escrowState.mint.mintTo(data.escrowState.claimer.publicKey, initializeDefaultAmount);
             data.accounts.vault = await getInitializedVault(data.escrowState.mint, initializeDefaultAmount);
-            data.accounts.vaultAuthority = SwapVaultAuthority;
             data.accounts.tokenProgram = TOKEN_PROGRAM_ID;
         }
 
@@ -1278,16 +1274,6 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
     
             const otherMint = await getNewMint();
             data.accounts.vault = await getInitializedVault(otherMint, initializeDefaultAmount);
-
-            const {result, signature, signerPreBalance, error} = await claimExecute(data);
-    
-            assert(error==="ConstraintSeeds", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
-        });
-
-        parallelTest.it(prefix+"Wrong vault authority", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount) as ClaimIXDataPayOut;
-    
-            data.accounts.vaultAuthority = RandomPDA();
 
             const {result, signature, signerPreBalance, error} = await claimExecute(data);
     
