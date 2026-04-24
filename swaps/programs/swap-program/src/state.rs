@@ -24,11 +24,14 @@ pub struct EscrowState {
     //Security deposit, paid out to offerer in case swap expires and needs to be refunded.
     //Used to cover transaction fee and compensate for time value of money locked up in the contract.
     //Alway paid as native Solana, in Lamports
-    pub security_deposit: u64
+    pub security_deposit: u64,
+
+    //Whether the PDA was initiated by the offerer or claimer
+    pub offerer_initializer: bool
 }
 
 impl EscrowState {
-    pub const SPACE: usize = 8 + 1 + 2 + 8 + 192 + 8 + 8 + 1 + 1 + 8 + 8 + 8 + 1;
+    pub const SPACE: usize = 8 + 1 + 2 + 8 + 192 + 8 + 8 + 1 + 1 + 8 + 8 + 8 + 1 + 1;
 }
 
 //PDA format for storing user's (LP node's) balance and reputation

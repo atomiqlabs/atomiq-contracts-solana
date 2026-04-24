@@ -1,3 +1,4 @@
+import { AnchorProvider } from "@coral-xyz/anchor";
 
 export class ParalelizedTest {
 
@@ -54,4 +55,15 @@ export class ParalelizedTest {
 
     }
 
+}
+
+export async function getTxWithRetries(provider: AnchorProvider, signature: string) {
+    for(;;) {
+        const tx = await provider.connection.getTransaction(signature, {
+            commitment: "confirmed"
+        });
+        if(tx!=null) {
+            return tx;
+        } else await new Promise(resolve => setTimeout(resolve, 1000))
+    }
 }

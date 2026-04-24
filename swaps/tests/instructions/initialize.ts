@@ -9,7 +9,7 @@ import { assert } from "chai";
 import { getInitializedUserData } from "../utils/userData";
 import { randomBytes } from "crypto";
 import { InitializeIXData, InitializeIXDataNotPayIn, InitializeIXDataPayIn, SwapData, SwapType, SwapTypeEnum, getInitializeDefaultDataNotPayIn, getInitializeDefaultDataPayIn, initializeDefaultAmount, initializeExecuteNotPayIn, initializeExecutePayIn } from "../utils/escrowState";
-import { ParalelizedTest } from "../utils";
+import { getTxWithRetries, ParalelizedTest } from "../utils";
 import { CombinedProgramErrorType } from "../utils/program";
 import { getInitializedVault } from "../utils/vault";
 
@@ -90,9 +90,6 @@ function runCommonTest(
         const data2 = await getDefaultInitializeData(true, undefined, undefined, undefined, undefined, Buffer.from(data.params.swapData.hash));
         
         const {result: result2, signature: signature2, error} = await execute(data2);
-
-        // const txData = await provider.connection.getTransaction(signature2, { commitment: "confirmed" });
-        // console.log("Transaction logs: ", txData.meta.logMessages);
 
         assert(error==="AccountAlreadyInitialized", "Invalid transaction error ("+error+"): "+JSON.stringify(result2.err));
     });
@@ -221,11 +218,11 @@ describe("swap-program: Initialize", () => {
             assert(escrowState.offerer.equals(data.accounts.offerer.publicKey), "Escrow: Invalid offerer!");
             assert(escrowState.offererAta.equals(PublicKey.default), "Escrow: Invalid offererAta!");
             assert(escrowState.securityDeposit.eq(data.params.securityDeposit), "Escrow: Invalid securityDeposit!");
+            assert(!escrowState.offererInitializer, "Escrow: Invalid offererInitializer!");
             
             //Check that event was emitted
-            const tx = await provider.connection.getTransaction(signature, {
-                commitment: "confirmed"
-            });
+
+            const tx = await getTxWithRetries(provider, signature);
             
             const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -276,11 +273,10 @@ describe("swap-program: Initialize", () => {
             assert(escrowState.offerer.equals(data.accounts.offerer.publicKey), "Escrow: Invalid offerer!");
             assert(escrowState.offererAta.equals(PublicKey.default), "Escrow: Invalid offererAta!");
             assert(escrowState.securityDeposit.eq(data.params.securityDeposit), "Escrow: Invalid securityDeposit!");
+            assert(!escrowState.offererInitializer, "Escrow: Invalid offererInitializer!");
             
             //Check that event was emitted
-            const tx = await provider.connection.getTransaction(signature, {
-                commitment: "confirmed"
-            });
+            const tx = await getTxWithRetries(provider, signature);
             
             const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -400,11 +396,10 @@ describe("swap-program: Initialize", () => {
             assert(escrowState.offerer.equals(data.accounts.offerer.publicKey), "Escrow: Invalid offerer!");
             assert(escrowState.offererAta.equals(data.accounts.offererAta), "Escrow: Invalid offererAta!");
             assert(escrowState.securityDeposit.eq(new BN(0)), "Escrow: Invalid securityDeposit!");
+            assert(escrowState.offererInitializer, "Escrow: Invalid offererInitializer!");
             
             //Check that event was emitted
-            const tx = await provider.connection.getTransaction(signature, {
-                commitment: "confirmed"
-            });
+            const tx = await getTxWithRetries(provider, signature);
             
             const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -460,11 +455,10 @@ describe("swap-program: Initialize", () => {
             assert(escrowState.offerer.equals(data.accounts.offerer.publicKey), "Escrow: Invalid offerer!");
             assert(escrowState.offererAta.equals(data.accounts.offererAta), "Escrow: Invalid offererAta!");
             assert(escrowState.securityDeposit.eq(new BN(0)), "Escrow: Invalid securityDeposit!");
+            assert(escrowState.offererInitializer, "Escrow: Invalid offererInitializer!");
             
             //Check that event was emitted
-            const tx = await provider.connection.getTransaction(signature, {
-                commitment: "confirmed"
-            });
+            const tx = await getTxWithRetries(provider, signature);
             
             const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 

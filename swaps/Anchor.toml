@@ -15,4 +15,4 @@ cluster = "localnet"
 wallet = "~/mainnet.key"
 
 [scripts]
-test = "npx ts-mocha -p ./tsconfig.json -t 1000000 tests/instructions/claim.ts"
+test = "npx ts-mocha -p ./tsconfig.json -t 1000000 tests/instructions/*.ts"
