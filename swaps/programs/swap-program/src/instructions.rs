@@ -304,12 +304,15 @@ pub struct Claim<'info> {
 
     /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
     #[account(mut)]
-    pub initializer: AccountInfo<'info>,
+    pub offerer: AccountInfo<'info>,
+    /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
+    #[account(mut)]
+    pub claimer: AccountInfo<'info>,
 
     #[account(
         mut,
         constraint = !escrow_state.data.pay_out,
-        constraint = if escrow_state.data.pay_in { escrow_state.offerer == *initializer.key } else { escrow_state.claimer == *initializer.key },
+        constraint = escrow_state.offerer == *offerer.key && escrow_state.claimer == *claimer.key,
     )]
     pub escrow_state: Box<Account<'info, EscrowState>>,
 
@@ -339,13 +342,16 @@ pub struct ClaimPayOut<'info> {
 
     /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
     #[account(mut)]
-    pub initializer: AccountInfo<'info>,
+    pub offerer: AccountInfo<'info>,
+    /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
+    #[account(mut)]
+    pub claimer: AccountInfo<'info>,
 
     #[account(
         mut,
         constraint = escrow_state.claimer_ata == claimer_ata.key(),
         constraint = escrow_state.data.pay_out,
-        constraint = if escrow_state.data.pay_in { escrow_state.offerer == *initializer.key } else { escrow_state.claimer == *initializer.key },
+        constraint = escrow_state.offerer == *offerer.key && escrow_state.claimer == *claimer.key,
     )]
     pub escrow_state: Box<Account<'info, EscrowState>>,
 

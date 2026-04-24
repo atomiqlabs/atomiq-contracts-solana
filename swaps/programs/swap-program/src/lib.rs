@@ -216,7 +216,7 @@ pub mod swap_program {
         user_data.success_volume[ctx.accounts.escrow_state.data.kind as usize] = user_data.success_volume[ctx.accounts.escrow_state.data.kind as usize].saturating_add(ctx.accounts.escrow_state.data.amount);
         user_data.success_count[ctx.accounts.escrow_state.data.kind as usize] = user_data.success_count[ctx.accounts.escrow_state.data.kind as usize].saturating_add(1);
 
-        ixs::claim::pay_claimer_bounty(&ctx.accounts.signer, &ctx.accounts.initializer, &ctx.accounts.escrow_state)?;
+        ixs::claim::pay_claimer_bounty(&ctx.accounts.signer, &ctx.accounts.offerer, &ctx.accounts.claimer, &ctx.accounts.escrow_state)?;
 
         Ok(())
     }
@@ -234,7 +234,7 @@ pub mod swap_program {
             ctx.accounts.escrow_state.data.amount,
         )?;
 
-        ixs::claim::pay_claimer_bounty(&ctx.accounts.signer, &ctx.accounts.initializer, &ctx.accounts.escrow_state)?;
+        ixs::claim::pay_claimer_bounty(&ctx.accounts.signer, &ctx.accounts.offerer, &ctx.accounts.claimer, &ctx.accounts.escrow_state)?;
 
         Ok(())
     }

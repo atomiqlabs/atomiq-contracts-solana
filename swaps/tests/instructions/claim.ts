@@ -97,7 +97,8 @@ type ClaimIXParams = {
 
 type ClaimIXAccounts = {
     signer: Keypair,
-    initializer: Keypair,
+    offerer: Keypair,
+    claimer: Keypair,
     escrowState: PublicKey,
     ixSysvar: PublicKey,
     data?: Keypair
@@ -237,7 +238,8 @@ export async function getClaimDefaultData(
 
     const _accounts: ClaimIXAccounts = {
         signer: signer,
-        initializer: payIn ? escrowStateData.offerer : escrowStateData.claimer,
+        offerer: escrowStateData.offerer,
+        claimer: escrowStateData.claimer,
         escrowState: SwapEscrowState(hash),
         ixSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
         data: null
@@ -379,7 +381,8 @@ export async function claimExecutePayOut(
         Buffer.from(data.params.secret || [])
     ).accounts({
         signer: data.accounts.signer.publicKey,
-        initializer: data.accounts.initializer.publicKey,
+        offerer: data.accounts.offerer.publicKey,
+        claimer: data.accounts.claimer.publicKey,
         escrowState: data.accounts.escrowState,
         ixSysvar: data.accounts.ixSysvar,
         claimerAta: data.accounts.claimerAta,
@@ -521,7 +524,8 @@ export async function claimExecuteNotPayOut(
         Buffer.from(data.params.secret || [])
     ).accounts({
         signer: data.accounts.signer.publicKey,
-        initializer: data.accounts.initializer.publicKey,
+        offerer: data.accounts.offerer.publicKey,
+        claimer: data.accounts.claimer.publicKey,
         escrowState: data.accounts.escrowState,
         ixSysvar: data.accounts.ixSysvar,
         claimerUserData: data.accounts.claimerUserData,
@@ -656,9 +660,15 @@ async function verifyClaimInvariants(data: ClaimIXData, initialState: ClaimIniti
     }
     
     //Check that event was emitted
-    const tx = await provider.connection.getTransaction(signature, {
-        commitment: "confirmed"
-    });
+    let tx;
+    for(;;) {
+        tx = await provider.connection.getTransaction(signature, {
+            commitment: "confirmed"
+        });
+        if(tx!=null) {
+            break;
+        } else await new Promise(resolve => setTimeout(resolve, 1000))
+    }
     
     const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -810,20 +820,20 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
         assert(error==="ConstraintRaw", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
     });
 
-    parallelTest.it(prefix+"Wrong initializer (random)", async () => {
+    parallelTest.it(prefix+"Wrong offerer (random)", async () => {
         const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
 
-        data.accounts.initializer = Keypair.generate();
+        data.accounts.offerer = Keypair.generate();
 
         const {result, signature, signerPreBalance, error} = await claimExecute(data);
 
         assert(error==="ConstraintRaw", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
     });
 
-    parallelTest.it(prefix+"Wrong initializer (switched)", async () => {
+    parallelTest.it(prefix+"Wrong claimer (random)", async () => {
         const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
 
-        data.accounts.initializer = payIn ? data.escrowState.claimer : data.escrowState.offerer;
+        data.accounts.claimer = Keypair.generate();
 
         const {result, signature, signerPreBalance, error} = await claimExecute(data);
 
