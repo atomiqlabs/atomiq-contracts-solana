@@ -109,20 +109,29 @@ pub fn pay_security_deposit<'info>(escrow_state: &Account<'info, EscrowState>, o
         escrow_state.close(initializer).unwrap();
     } else {
         //Un-cooperative closure, security deposit goes to offerer, rest is paid out to the initializer
-        if escrow_state.security_deposit>0 {
-            let offerer_starting_lamports = offerer.to_account_info().lamports();
-            let initializer_starting_lamports = initializer.lamports();
-            let data_starting_lamports = escrow_state.to_account_info().lamports();
-
-            **offerer.to_account_info().lamports.borrow_mut() = offerer_starting_lamports.checked_add(escrow_state.security_deposit).unwrap();
-            **initializer.lamports.borrow_mut() = initializer_starting_lamports.checked_add(data_starting_lamports - escrow_state.security_deposit).unwrap();
-            **escrow_state.to_account_info().lamports.borrow_mut() = 0;
+        let mut data_starting_lamports = escrow_state.to_account_info().lamports();
         
-            escrow_state.to_account_info().assign(&system_program::ID);
-            escrow_state.to_account_info().realloc(0, false).unwrap();
-        } else {
-            escrow_state.close(initializer).unwrap();
+        //Security deposit goes to offerer
+        if escrow_state.security_deposit>0 {
+            **offerer.lamports.borrow_mut() = offerer.lamports().checked_add(escrow_state.security_deposit).unwrap();
+            data_starting_lamports = data_starting_lamports.checked_sub(escrow_state.security_deposit).unwrap();
         }
+
+        //Rest, if any, goes back to the claimer
+        if escrow_state.claimer_bounty>escrow_state.security_deposit {
+            let leaves_amount = escrow_state.claimer_bounty - escrow_state.security_deposit;
+            **claimer.lamports.borrow_mut() = claimer.lamports().checked_add(leaves_amount).unwrap();
+            data_starting_lamports = data_starting_lamports.checked_sub(leaves_amount).unwrap();
+        }
+
+        //Any residual amount in the PDA is paid out to the party which originally initiated the PDA
+        if data_starting_lamports>0 {
+            **initializer.lamports.borrow_mut() = initializer.lamports().checked_add(data_starting_lamports).unwrap();
+        }
+
+        **escrow_state.to_account_info().lamports.borrow_mut() = 0;
+        escrow_state.to_account_info().assign(&system_program::ID);
+        escrow_state.to_account_info().realloc(0, false).unwrap();
     }
 
     Ok(())

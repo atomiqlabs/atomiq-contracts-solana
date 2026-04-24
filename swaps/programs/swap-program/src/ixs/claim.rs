@@ -144,25 +144,31 @@ pub fn check_claim_chain(swap_data: &SwapData, ix_sysvar: &AccountInfo, secret: 
 
 //Handles payout of claimer bounty & paying the rest back to initializer
 pub fn pay_claimer_bounty<'info>(signer: &Signer, offerer: &AccountInfo<'info>, claimer: &AccountInfo<'info>, escrow_state: &Account<'info, EscrowState>) -> Result<()> {
-
-    //Pay out claimer bounty to signer, rest goes back to initializer
     let initializer = if escrow_state.offerer_initializer { offerer.to_account_info() } else { claimer.to_account_info() };
-    if escrow_state.claimer_bounty>0 {
-        let data_starting_lamports = escrow_state.to_account_info().lamports();
 
-        let signer_starting_lamports = signer.to_account_info().lamports();
-        **signer.to_account_info().lamports.borrow_mut() = signer_starting_lamports.checked_add(escrow_state.claimer_bounty).unwrap();
-
-        let initializer_starting_lamports = initializer.lamports();
-        **initializer.lamports.borrow_mut() = initializer_starting_lamports.checked_add(data_starting_lamports - escrow_state.claimer_bounty).unwrap();
-        
-        **escrow_state.to_account_info().lamports.borrow_mut() = 0;
+    let mut data_starting_lamports = escrow_state.to_account_info().lamports();
     
-        escrow_state.to_account_info().assign(&system_program::ID);
-        escrow_state.to_account_info().realloc(0, false).unwrap();
-    } else {
-        escrow_state.close(initializer.to_account_info()).unwrap();
+    //Pay the claimer bounty, if provided
+    if escrow_state.claimer_bounty>0 {
+        **signer.lamports.borrow_mut() = signer.lamports().checked_add(escrow_state.claimer_bounty).unwrap();
+        data_starting_lamports = data_starting_lamports.checked_sub(escrow_state.claimer_bounty).unwrap();
     }
+
+    //If the security deposit was larger than the claimer bounty, return that difference to the claimer 
+    if escrow_state.security_deposit>escrow_state.claimer_bounty {
+        let leaves_amount = escrow_state.security_deposit - escrow_state.claimer_bounty;
+        **claimer.lamports.borrow_mut() = claimer.lamports().checked_add(leaves_amount).unwrap();
+        data_starting_lamports = data_starting_lamports.checked_sub(leaves_amount).unwrap();
+    }
+
+    //Any residual amount in the PDA is paid out to the party which originally initiated the PDA
+    if data_starting_lamports>0 {
+        **initializer.lamports.borrow_mut() = initializer.lamports().checked_add(data_starting_lamports).unwrap();
+    }
+
+    **escrow_state.to_account_info().lamports.borrow_mut() = 0;
+    escrow_state.to_account_info().assign(&system_program::ID);
+    escrow_state.to_account_info().realloc(0, false).unwrap();
 
     Ok(())
 
