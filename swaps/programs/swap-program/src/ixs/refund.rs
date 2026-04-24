@@ -103,7 +103,7 @@ pub fn verify_timeout(escrow_state: &Account<EscrowState>, ix_sysvar: &Option<Ac
 //Pays out security deposit to offerer & pays the rest back to initializer
 pub fn pay_security_deposit<'info>(escrow_state: &Account<'info, EscrowState>, offerer: &AccountInfo<'info>, claimer: &AccountInfo<'info>, is_cooperative: bool) -> Result<()> {
 
-    let initializer = if escrow_state.data.pay_in { offerer.to_account_info() } else { claimer.to_account_info() };
+    let initializer = if escrow_state.offerer_initializer { offerer.to_account_info() } else { claimer.to_account_info() };
     if is_cooperative {
         //Coop closure, whole PDA amount (rent, security deposit & claimer bounty) is returned to initializer
         escrow_state.close(initializer).unwrap();

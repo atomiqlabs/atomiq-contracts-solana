@@ -146,7 +146,7 @@ pub fn check_claim_chain(swap_data: &SwapData, ix_sysvar: &AccountInfo, secret: 
 pub fn pay_claimer_bounty<'info>(signer: &Signer, offerer: &AccountInfo<'info>, claimer: &AccountInfo<'info>, escrow_state: &Account<'info, EscrowState>) -> Result<()> {
 
     //Pay out claimer bounty to signer, rest goes back to initializer
-    let initializer = if escrow_state.data.pay_in { offerer.to_account_info() } else { claimer.to_account_info() };
+    let initializer = if escrow_state.offerer_initializer { offerer.to_account_info() } else { claimer.to_account_info() };
     if escrow_state.claimer_bounty>0 {
         let data_starting_lamports = escrow_state.to_account_info().lamports();
 

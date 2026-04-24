@@ -11,7 +11,7 @@ import { getInitializedUserData } from "../utils/userData";
 import { randomBytes, createHash } from "crypto";
 import { EscrowStateType, SwapData, SwapType, SwapTypeEnum, getInitializeDefaultDataNotPayIn, getInitializeDefaultDataPayIn, getInitializedEscrowState as _getInitializedEscrowState, initializeDefaultAmount, initializeExecuteNotPayIn, initializeExecutePayIn } from "../utils/escrowState";
 import { BtcRelayMainState, btcRelayProgram } from "../btcrelay/accounts";
-import { ParalelizedTest } from "../utils";
+import { getTxWithRetries, ParalelizedTest } from "../utils";
 import { CombinedProgramErrorType, parseSwapProgramError } from "../utils/program";
 
 const BLOCKHEIGHT_EXPIRY_THRESHOLD = new BN(1000000000);
@@ -385,15 +385,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, refundType: "signed" | "t
             assert(initialClaimerLamports+pdaLamports-securityDeposit===postClaimerLamports, "Invalid claimer lamport balance, expected: "+(initialClaimerLamports+pdaLamports-securityDeposit)+" got: "+postClaimerLamports);
         }
         //Check that event was emitted
-        let tx;
-        for(;;) {
-            tx = await provider.connection.getTransaction(signature, {
-                commitment: "confirmed"
-            });
-            if(tx!=null) {
-                break;
-            } else await new Promise(resolve => setTimeout(resolve, 1000))
-        }
+        const tx = await getTxWithRetries(provider, signature);
         
         const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 

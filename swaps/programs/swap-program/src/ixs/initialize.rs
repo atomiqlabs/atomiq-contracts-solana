@@ -28,7 +28,8 @@ pub fn process_initialize(
     swap_data: &SwapData,
     
     txo_hash: [u8; 32], //Only for on-chain,
-    auth_expiry: u64
+    auth_expiry: u64,
+    offerer_initializer: bool
 ) -> Result<()> {
     require!(
         auth_expiry > now_ts()?,
@@ -57,6 +58,8 @@ pub fn process_initialize(
         escrow_state.claimer_ata = *claimer_ata.to_account_info().key;
     }
     escrow_state.mint = *mint.to_account_info().key;
+
+    escrow_state.offerer_initializer = offerer_initializer;
 
     emit!(InitializeEvent {
         hash: swap_data.hash,

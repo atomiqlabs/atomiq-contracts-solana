@@ -11,7 +11,7 @@ import { getInitializedUserData } from "../utils/userData";
 import { randomBytes, createHash } from "crypto";
 import { EscrowStateType, SwapData, SwapType, SwapTypeEnum, getInitializeDefaultDataPayIn, getInitializedEscrowState, initializeDefaultAmount } from "../utils/escrowState";
 import { BtcRelayMainState, CommittedHeader, btcRelayProgram } from "../btcrelay/accounts";
-import { ParalelizedTest } from "../utils";
+import { getTxWithRetries, ParalelizedTest } from "../utils";
 import * as bitcoin from "bitcoinjs-lib";
 import { AnchorErrorCodes, CombinedProgramErrorType, SwapProgramError, parseSwapProgramError } from "../utils/program";
 import { getInitializedVault } from "../utils/vault";
@@ -660,15 +660,7 @@ async function verifyClaimInvariants(data: ClaimIXData, initialState: ClaimIniti
     }
     
     //Check that event was emitted
-    let tx;
-    for(;;) {
-        tx = await provider.connection.getTransaction(signature, {
-            commitment: "confirmed"
-        });
-        if(tx!=null) {
-            break;
-        } else await new Promise(resolve => setTimeout(resolve, 1000))
-    }
+    const tx = await getTxWithRetries(provider, signature);
     
     const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 

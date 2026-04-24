@@ -103,6 +103,7 @@ pub mod swap_program {
             &swap_data,
             txo_hash,
             auth_expiry,
+            true
         )?;
 
         ctx.accounts.escrow_state.offerer_ata = *ctx.accounts.offerer_ata.to_account_info().key;
@@ -144,6 +145,7 @@ pub mod swap_program {
             &swap_data,
             txo_hash,
             auth_expiry,
+            false
         )?;
 
         //We can calculate only the maximum of the two, not a sum,
