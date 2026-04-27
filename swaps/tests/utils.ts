@@ -8,7 +8,7 @@ export class ParalelizedTest {
         fn: () => Promise<void>
     }[] = [];
 
-    constructor(maxParallelTests: number = 10) {
+    constructor(maxParallelTests: number = 5) {
         this.maxParallelTests = maxParallelTests;
     }
 

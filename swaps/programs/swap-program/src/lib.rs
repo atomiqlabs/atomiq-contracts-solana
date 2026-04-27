@@ -1,14 +1,12 @@
 use anchor_lang::{
     prelude::*, 
     solana_program::clock, 
-    solana_program::sysvar::instructions::ID as IX_ID,
-    system_program
+    solana_program::sysvar::instructions::ID as IX_ID
 };
 use anchor_spl::token::{
     self, /*CloseAccount, */ Mint, Token,
     TokenAccount, Transfer
 };
-use std::cmp;
 
 use enums::*;
 use errors::*;
@@ -85,6 +83,8 @@ pub mod swap_program {
     pub fn offerer_initialize_pay_in(
         ctx: Context<InitializePayIn>,
         swap_data: SwapData,
+        security_deposit: u64,
+        claimer_bounty: u64,
         txo_hash: [u8; 32], //Only for on-chain,
         auth_expiry: u64
     ) -> Result<()> {
@@ -98,12 +98,15 @@ pub mod swap_program {
             &mut ctx.accounts.escrow_state,
             &ctx.accounts.offerer.to_account_info(),
             &ctx.accounts.claimer,
+            &ctx.accounts.initializer.to_account_info(),
             &ctx.accounts.claimer_ata,
             &ctx.accounts.mint,
             &swap_data,
             txo_hash,
             auth_expiry,
-            true
+            security_deposit,
+            claimer_bounty,
+            &ctx.accounts.system_program
         )?;
 
         ctx.accounts.escrow_state.offerer_ata = *ctx.accounts.offerer_ata.to_account_info().key;
@@ -140,36 +143,16 @@ pub mod swap_program {
             &mut ctx.accounts.escrow_state,
             &ctx.accounts.offerer.to_account_info(),
             &ctx.accounts.claimer,
+            &ctx.accounts.initializer.to_account_info(),
             &ctx.accounts.claimer_ata,
             &ctx.accounts.mint,
             &swap_data,
             txo_hash,
             auth_expiry,
-            false
+            security_deposit,
+            claimer_bounty,
+            &ctx.accounts.system_program
         )?;
-
-        //We can calculate only the maximum of the two, not a sum,
-        // since only one of them can ever be paid out:
-        // swap success - security_deposit goes back to claimer, claimer_bounty is paid to watchtower
-        // swap failed - claimer_bounty goes back to claimer, security_deposit is paid to offerer
-        let required_lamports = cmp::max(security_deposit, claimer_bounty);
-
-        //There is already some amount of lamports in the PDA, required for rent exemption
-        //Only deposit more if it's required
-        let dst_starting_lamports = ctx.accounts.escrow_state.to_account_info().lamports();
-        if dst_starting_lamports < required_lamports {
-            let difference = required_lamports - dst_starting_lamports;
-            let cpi_program = ctx.accounts.system_program.to_account_info();
-            let transfer_lamports_instruction = system_program::Transfer{
-                from: ctx.accounts.claimer.to_account_info(),
-                to: ctx.accounts.escrow_state.to_account_info()
-            };
-            let cpi_ctx = CpiContext::new(cpi_program, transfer_lamports_instruction);
-            system_program::transfer(cpi_ctx, difference)?;
-        }
-        
-        ctx.accounts.escrow_state.security_deposit = security_deposit;
-        ctx.accounts.escrow_state.claimer_bounty = claimer_bounty;
 
         ctx.accounts.offerer_user_data.amount -= swap_data.amount;
 

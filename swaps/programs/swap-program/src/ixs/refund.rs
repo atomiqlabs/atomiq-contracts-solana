@@ -6,6 +6,7 @@ use anchor_lang::{
     solana_program::instruction::Instruction,
     system_program
 };
+use std::cmp;
 
 use crate::errors::*;
 use crate::state::*;
@@ -104,13 +105,16 @@ pub fn verify_timeout(escrow_state: &Account<EscrowState>, ix_sysvar: &Option<Ac
 pub fn pay_security_deposit<'info>(escrow_state: &Account<'info, EscrowState>, offerer: &AccountInfo<'info>, claimer: &AccountInfo<'info>, is_cooperative: bool) -> Result<()> {
 
     let initializer = if escrow_state.offerer_initializer { offerer.to_account_info() } else { claimer.to_account_info() };
+    
+    let mut data_starting_lamports = escrow_state.to_account_info().lamports();
     if is_cooperative {
-        //Coop closure, whole PDA amount (rent, security deposit & claimer bounty) is returned to initializer
-        escrow_state.close(initializer).unwrap();
+        //Coop closure, the whole total deposit is returned to the claimer (maximum of claimerBounty and security deposit)
+        let total_deposit = cmp::max(escrow_state.security_deposit, escrow_state.claimer_bounty);
+        if total_deposit>0 {
+            **claimer.lamports.borrow_mut() = claimer.lamports().checked_add(total_deposit).unwrap();
+            data_starting_lamports = data_starting_lamports.checked_sub(total_deposit).unwrap();
+        }
     } else {
-        //Un-cooperative closure, security deposit goes to offerer, rest is paid out to the initializer
-        let mut data_starting_lamports = escrow_state.to_account_info().lamports();
-        
         //Security deposit goes to offerer
         if escrow_state.security_deposit>0 {
             **offerer.lamports.borrow_mut() = offerer.lamports().checked_add(escrow_state.security_deposit).unwrap();
@@ -123,16 +127,16 @@ pub fn pay_security_deposit<'info>(escrow_state: &Account<'info, EscrowState>, o
             **claimer.lamports.borrow_mut() = claimer.lamports().checked_add(leaves_amount).unwrap();
             data_starting_lamports = data_starting_lamports.checked_sub(leaves_amount).unwrap();
         }
-
-        //Any residual amount in the PDA is paid out to the party which originally initiated the PDA
-        if data_starting_lamports>0 {
-            **initializer.lamports.borrow_mut() = initializer.lamports().checked_add(data_starting_lamports).unwrap();
-        }
-
-        **escrow_state.to_account_info().lamports.borrow_mut() = 0;
-        escrow_state.to_account_info().assign(&system_program::ID);
-        escrow_state.to_account_info().realloc(0, false).unwrap();
     }
+
+    //Any residual amount in the PDA is paid out to the party which originally initiated the PDA
+    if data_starting_lamports>0 {
+        **initializer.lamports.borrow_mut() = initializer.lamports().checked_add(data_starting_lamports).unwrap();
+    }
+
+    **escrow_state.to_account_info().lamports.borrow_mut() = 0;
+    escrow_state.to_account_info().assign(&system_program::ID);
+    escrow_state.to_account_info().realloc(0, false).unwrap();
 
     Ok(())
 }

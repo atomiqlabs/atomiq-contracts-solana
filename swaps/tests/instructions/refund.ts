@@ -277,8 +277,8 @@ export async function refundExecuteNotPayIn(data: RefundIXDataNotPayIn, thirdPar
 
 const parallelTest = new ParalelizedTest();
 
-function runTestsWith(payIn: boolean, payOut: boolean, refundType: "signed" | "timestamp" | "blockheight") {
-    const prefix = "Refund [payIn:"+payIn+" payOut:"+payOut+" "+refundType+"] ";
+function runTestsWith(payIn: boolean, payOut: boolean, offererInitializer: boolean, refundType: "signed" | "timestamp" | "blockheight") {
+    const prefix = "Refund [payIn:"+payIn+" payOut:"+payOut+" offererInitializer:"+offererInitializer+" "+refundType+"] ";
 
     const getInitializedEscrowState = (
         _payIn: boolean = payIn,
@@ -294,7 +294,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, refundType: "signed" | "t
         securityDeposit: BN = new BN(Math.floor(Math.random()*50000)),
         claimerBounty: BN = new BN(Math.floor(Math.random()*50000))
     ) => {
-        return _getInitializedEscrowState(_payIn, _payOut, kind, expiry, hash, amount, confirmations, nonce, sequence, txoHash, securityDeposit, claimerBounty);
+        return _getInitializedEscrowState(_payIn, _payOut, kind, expiry, hash, amount, confirmations, nonce, sequence, txoHash, securityDeposit, claimerBounty, offererInitializer);
     };
     const getRefundDefaultData: (
         escrowState: EscrowStateType
@@ -375,15 +375,27 @@ function runTestsWith(payIn: boolean, payOut: boolean, refundType: "signed" | "t
 
         const txFee = thirdPartySigner ? 0 : (refundType==="signed" ? 2 : 1)*lamportsPerSignature;
 
-        if(payIn) {
-            assert(initialOffererLamports+pdaLamports-txFee===postOffererLamports, "Invalid offerer lamport balance, expected: "+(initialOffererLamports+pdaLamports-txFee)+" got: "+postOffererLamports);
-            assert(initialClaimerLamports===postClaimerLamports, "Invalid claimer lamport balance, expected: "+initialClaimerLamports+" got: "+postClaimerLamports);
+        let expectedOffererBalanceChange = 0;
+        let expectedClaimerBalanceChange = 0;
+        if(refundType==="signed") {
+            // Cooperative refund, the total deposit goes to claimer, the rest goes to the initializer
+            expectedClaimerBalanceChange += Math.max(escrowStateData.securityDeposit.toNumber(), escrowStateData.claimerBounty.toNumber());
         } else {
-            let securityDeposit = refundType==="signed" ? 0 : escrowStateData.securityDeposit.toNumber();
-
-            assert(initialOffererLamports+securityDeposit-txFee===postOffererLamports, "Invalid offerer lamport balance, expected: "+(initialOffererLamports+securityDeposit-txFee)+" got: "+postOffererLamports);
-            assert(initialClaimerLamports+pdaLamports-securityDeposit===postClaimerLamports, "Invalid claimer lamport balance, expected: "+(initialClaimerLamports+pdaLamports-securityDeposit)+" got: "+postClaimerLamports);
+            expectedOffererBalanceChange += escrowStateData.securityDeposit.toNumber();
+            if(escrowStateData.claimerBounty.toNumber() > escrowStateData.securityDeposit.toNumber())
+                expectedClaimerBalanceChange += escrowStateData.claimerBounty.toNumber() - escrowStateData.securityDeposit.toNumber();
         }
+        const leavesPdaBalance = pdaLamports - expectedOffererBalanceChange - expectedClaimerBalanceChange;
+        if(offererInitializer) {
+            expectedOffererBalanceChange += leavesPdaBalance;
+        } else {
+            expectedClaimerBalanceChange += leavesPdaBalance;
+        }
+        expectedOffererBalanceChange -= txFee;
+
+        assert(initialOffererLamports+expectedOffererBalanceChange===postOffererLamports, "Invalid offerer lamport balance, expected change: "+expectedOffererBalanceChange+", expected: "+(initialOffererLamports+expectedOffererBalanceChange)+" got: "+postOffererLamports);
+        assert(initialClaimerLamports+expectedClaimerBalanceChange===postClaimerLamports, "Invalid claimer lamport balance, expected change: "+expectedClaimerBalanceChange+", expected: "+(initialClaimerLamports+expectedClaimerBalanceChange)+" got: "+postClaimerLamports);
+
         //Check that event was emitted
         const tx = await getTxWithRetries(provider, signature);
         
@@ -684,12 +696,15 @@ describe("swap-program: Refund", () => {
 
     const payInVariants = [false, true];
     const payOutVariants = [false, true];
+    const offererInitializerVariants = [false, true];
     const refundTypes: ("signed" | "timestamp" | "blockheight")[] = ["signed", "timestamp", "blockheight"];
 
     for(let payIn of payInVariants) {
         for(let payOut of payOutVariants) {
-            for(let refundType of refundTypes) {
-                runTestsWith(payIn, payOut, refundType);
+            for(let offererInitializer of offererInitializerVariants) {
+                for(let refundType of refundTypes) {
+                    runTestsWith(payIn, payOut, offererInitializer, refundType);
+                }
             }
         }
     }

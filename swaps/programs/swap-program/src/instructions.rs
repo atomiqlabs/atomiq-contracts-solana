@@ -85,9 +85,18 @@ pub struct Withdraw<'info> {
     swap_data: SwapData
 )]
 pub struct InitializePayIn<'info> {
-    #[account(mut)]
     pub offerer: Signer<'info>,
-    pub claimer: Signer<'info>,
+    /// CHECK: Optional signer only if swap_data.pay_out==false
+    #[account(
+        constraint = swap_data.pay_out || claimer.is_signer
+    )]
+    pub claimer: AccountInfo<'info>,
+
+    #[account(
+         mut,
+         constraint = initializer.key==offerer.key || initializer.key==claimer.key
+    )]
+    pub initializer: Signer<'info>,
 
     //Account of the token for initializer
     #[account(
@@ -102,7 +111,7 @@ pub struct InitializePayIn<'info> {
         init,
         seeds = [b"state".as_ref(), swap_data.hash.as_ref()],
         bump,
-        payer = offerer,
+        payer = initializer,
         space = EscrowState::SPACE,
         //We need to verify existence of the recipient (either ATA or UserData PDA)
         constraint = if swap_data.pay_out { claimer_ata.is_some() } else { claimer_user_data.is_some() }
@@ -114,7 +123,7 @@ pub struct InitializePayIn<'info> {
         init_if_needed,
         seeds = [b"vault".as_ref(), mint.to_account_info().key.as_ref()],
         bump,
-        payer = offerer,
+        payer = initializer,
         token::mint = mint,
         token::authority = vault,
     )]
@@ -148,9 +157,18 @@ pub struct InitializePayIn<'info> {
     swap_data: SwapData
 )]
 pub struct Initialize<'info> {
-    #[account(mut)]
-    pub claimer: Signer<'info>,
     pub offerer: Signer<'info>,
+    /// CHECK: Optional signer only if swap_data.pay_out==false
+    #[account(
+        constraint = swap_data.pay_out || claimer.is_signer
+    )]
+    pub claimer: AccountInfo<'info>,
+
+    #[account(
+         mut,
+         constraint = initializer.key==offerer.key || initializer.key==claimer.key
+    )]
+    pub initializer: Signer<'info>,
 
     //Account of the token for initializer
     #[account(
@@ -166,7 +184,7 @@ pub struct Initialize<'info> {
         init,
         seeds = [b"state".as_ref(), swap_data.hash.as_ref()],
         bump,
-        payer = claimer,
+        payer = initializer,
         space = EscrowState::SPACE,
         //We need to verify existence of the recipient (either ATA or UserData PDA)
         constraint = if swap_data.pay_out { claimer_ata.is_some() } else { claimer_user_data.is_some() }
