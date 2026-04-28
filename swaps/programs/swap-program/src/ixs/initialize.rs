@@ -4,8 +4,7 @@ use anchor_lang::{
     system_program
 };
 use anchor_spl::token::{
-    Mint,
-    TokenAccount
+    Mint
 };
 use std::cmp;
 
@@ -25,7 +24,7 @@ pub fn process_initialize<'info>(
     offerer: &AccountInfo<'info>,
     claimer: &AccountInfo<'info>,
     initializer: &AccountInfo<'info>,
-    claimer_ata: &Option<Account<'info, TokenAccount>>,
+    claimer_ata: &Option<AccountInfo<'info>>,
     mint: &Account<'info, Mint>,
 
     swap_data: &SwapData,
@@ -62,7 +61,7 @@ pub fn process_initialize<'info>(
 
     if swap_data.pay_out {
         let claimer_ata = claimer_ata.as_ref().expect("Claimer ATA not provided for pay_out=true swap");
-        escrow_state.claimer_ata = *claimer_ata.to_account_info().key;
+        escrow_state.claimer_ata = *claimer_ata.key;
     }
     escrow_state.mint = *mint.to_account_info().key;
 

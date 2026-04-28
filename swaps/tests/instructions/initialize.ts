@@ -138,24 +138,24 @@ function runCommonTest(
         assert(error==="InvalidSwapDataNonce", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
     });
 
-    parallelTest.it(prefix+"payOut=true: Uninitialized claimerAta", async () => {
-        const data = await getDefaultInitializeData(true, true);
+    // parallelTest.it(prefix+"payOut=true: Uninitialized claimerAta", async () => {
+    //     const data = await getDefaultInitializeData(true, true);
 
-        const {result, signature, error} = await execute(data);
+    //     const {result, signature, error} = await execute(data);
 
-        assert(error==="AccountNotInitialized", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
-    });
+    //     assert(error==="AccountNotInitialized", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
+    // });
 
-    parallelTest.it(prefix+"payOut=true: claimerAta of other mint", async () => {
-        const data = await getDefaultInitializeData(true, true);
+    // parallelTest.it(prefix+"payOut=true: claimerAta of other mint", async () => {
+    //     const data = await getDefaultInitializeData(true, true);
 
-        const otherMint = await getNewMint();
-        data.accounts.claimerAta = await otherMint.mintTo(data.accounts.claimer.publicKey, escrowAmount);
+    //     const otherMint = await getNewMint();
+    //     data.accounts.claimerAta = await otherMint.mintTo(data.accounts.claimer.publicKey, escrowAmount);
 
-        const {result, signature, error} = await execute(data);
+    //     const {result, signature, error} = await execute(data);
 
-        assert(error==="ConstraintTokenMint", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
-    });
+    //     assert(error==="ConstraintTokenMint", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
+    // });
 
     parallelTest.it(prefix+"payOut=false: Uninitialized claimerUserData", async () => {
         const data = await getDefaultInitializeData(false, true);

@@ -146,10 +146,7 @@ pub struct InitializePayIn<'info> {
     ////////////////////////////////////////
     //For pay out
     ////////////////////////////////////////
-    #[account(
-        token::mint = mint
-    )]
-    pub claimer_ata: Option<Account<'info, TokenAccount>>,
+    pub claimer_ata: Option<AccountInfo<'info>>,
 }
 
 #[derive(Accounts)]
@@ -207,10 +204,7 @@ pub struct Initialize<'info> {
     ////////////////////////////////////////
     //For pay out
     ////////////////////////////////////////
-    #[account(
-        token::mint = mint
-    )]
-    pub claimer_ata: Option<Account<'info, TokenAccount>>
+    pub claimer_ata: Option<AccountInfo<'info>>
 }
 
 #[derive(Accounts)]
