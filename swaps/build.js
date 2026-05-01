@@ -25,6 +25,7 @@ if (!envName || !VALID_ENVS.includes(envName)) {
   process.exit(1);
 }
 
+const btcRelayKeysDir = path.join(projectDir, "../btcrelay/keys");
 const keysDir = path.join(projectDir, "keys");
 const targetDeployDir = path.join(projectDir, "target", "deploy");
 const anchorTomlPath = path.join(projectDir, "Anchor.toml");
@@ -81,12 +82,16 @@ function copySelectedKeypair(sourcePath, destPath) {
   );
 }
 
-function run(command, args) {
+function run(command, args, envVars) {
   console.log(`\n$ ${command} ${args.join(" ")}`);
 
   execFileSync(command, args, {
     cwd: projectDir,
     stdio: "inherit",
+    env: {
+      ...process.env,
+      ...envVars
+    }
   });
 }
 
@@ -146,7 +151,10 @@ function main() {
 
   updateAnchorToml(selectedProgramId);
 
-  run("anchor", ["build"]);
+  const btcRelayKeypair = loadKeypair(btcRelayKeysDir+"/"+ENV_TO_KEY[envName]+".json");
+  console.log("\nUsing Btc Relay deployment address: "+btcRelayKeypair.publicKey.toString());
+
+  run("anchor", ["build"], {BTC_RELAY_ADDRESS: btcRelayKeypair.publicKey.toString()});
 }
 
 try {

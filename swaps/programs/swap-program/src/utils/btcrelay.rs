@@ -5,7 +5,7 @@ use anchor_lang::{
 use std::str::FromStr;
 use crate::SwapErrorCode;
 
-const BTC_RELAY_ID_BASE58: &str = "3KHSHFpEK6bsjg3bqcxQ9qssJYtRCMi2S9TYVe4q6CQc";
+const BTC_RELAY_ID_BASE58: &str = env!("BTC_RELAY_ADDRESS");
 const TX_VERIFY_IX_PREFIX: [u8; 8] = [
     0x9d,
     0x7e,
