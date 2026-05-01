@@ -4,10 +4,10 @@
 target
 **/*.rs.bk
 node_modules
-test-ledger
+package-lock.json
 regenKeys.sh
 magicFix.sh
 magicFix2.sh
 airdropAbuse
 recoverKey
-
+keys/

@@ -1,9 +1,12 @@
 [features]
 seeds = false
+
 [programs.mainnet]
 swap_program = "4hfUykhqmD7ZRvNh1HuzVKEY7ToENixtdUKZspNDCrEM"
+
 [programs.localnet]
 swap_program = "4hfUykhqmD7ZRvNh1HuzVKEY7ToENixtdUKZspNDCrEM"
+
 [programs.devnet]
 swap_program = "4hfUykhqmD7ZRvNh1HuzVKEY7ToENixtdUKZspNDCrEM"
 
