@@ -146,7 +146,7 @@ function main() {
 
   updateAnchorToml(selectedProgramId);
 
-  run("anchor", ["build"]);
+  run("anchor", ["build"].concat(envName==="mainnet" ? [] : ["--", "--features", "bitcoin_testnet"]));
 }
 
 try {
