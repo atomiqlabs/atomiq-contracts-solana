@@ -91,6 +91,7 @@ pub struct ForkState {
     pub tip_commit_hash: [u8; 32], //Blockheader data commitment hash for the latest block - fork tip
     pub tip_block_hash: [u8; 32], //Blockhash of the latest block - fork tip
 
+    //First block commitment is the commitment of the block still in the main chain
     pub block_commitments: [[u8; 32]; 250], //Buffer storing block data commitments (sha256 hashes of CommittedBlockHeader data)
 }
 
@@ -101,7 +102,7 @@ impl ForkState {
     }
     
     //Stores block commitment in the array, no ring buffer is implemented here,
-    // limiting the maximum fork length to PRUNING_FACTOR blocks
+    // limiting the maximum fork length to PRUNING_FACTOR-1 blocks
     pub fn store_block_commitment(&mut self, block_commitment: [u8; 32]) {
         self.block_commitments[self.length as usize] = block_commitment;
         self.length += 1;

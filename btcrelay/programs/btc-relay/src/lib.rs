@@ -266,6 +266,8 @@ pub mod btc_relay {
 
                 fork_state.initialized = 1;
                 fork_state.start_height = block_height;
+                //Save the commitment for the last block that is also in the main chain
+                fork_state.store_block_commitment(commit_hash);
             } else {
                 //Verify commited header was indeed committed in the fork state
                 require!(
@@ -306,10 +308,17 @@ pub mod btc_relay {
             if arrayutils::gt_arr(last_commited_header.chain_work, main_state.chain_work) {
                 //Successful fork, fork's work exceeded main chain's work
 
-                //Overwrite block commitments in main chain
                 let start_height = fork_state.start_height;
-                for i in 0..fork_state.length {
-                    main_state.store_block_commitment(start_height+1+i, fork_state.block_commitments[i as usize]);
+
+                //Verify that the fork's root block is still committed in the main chain
+                require!(
+                    fork_state.block_commitments[0] == main_state.get_commitment(start_height),
+                    RelayErrorCode::ForkRootBlockNotInMainChain
+                );
+
+                //Overwrite block commitments in main chain
+                for i in 1..fork_state.length {
+                    main_state.store_block_commitment(start_height+i, fork_state.block_commitments[i as usize]);
                 }
 
                 //Update main state with fork's state
