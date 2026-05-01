@@ -306,15 +306,11 @@ pub mod btc_relay {
             if arrayutils::gt_arr(last_commited_header.chain_work, main_state.chain_work) {
                 //Successful fork, fork's work exceeded main chain's work
 
-                msg!("Successful fork...");
-
                 //Overwrite block commitments in main chain
                 let start_height = fork_state.start_height;
                 for i in 0..fork_state.length {
                     main_state.store_block_commitment(start_height+1+i, fork_state.block_commitments[i as usize]);
                 }
-
-                msg!("Commitments stored...");
 
                 //Update main state with fork's state
                 main_state.last_diff_adjustment = last_commited_header.last_diff_adjustment;
@@ -322,8 +318,6 @@ pub mod btc_relay {
                 main_state.chain_work = last_commited_header.chain_work;
                 main_state.tip_commit_hash = block_commit_hash;
                 main_state.tip_block_hash = last_block_hash;
-
-                msg!("Main state updated");
 
                 //Close the fork PDA
                 close = true;
@@ -343,7 +337,6 @@ pub mod btc_relay {
 
         if close {
             ctx.accounts.fork_state.close(ctx.accounts.signer.to_account_info())?;
-            msg!("Account closed");
         }
 
         Ok(())
