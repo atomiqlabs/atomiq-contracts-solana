@@ -75,7 +75,7 @@ async function execute(accounts: IXAccounts): Promise<{result: SignatureResult, 
     const signature = await provider.connection.sendTransaction(tx, [accounts.signer], {
         skipPreflight: true
     });
-    const result = await provider.connection.confirmTransaction(signature);
+    const result = await provider.connection.confirmTransaction(signature, "confirmed");
 
     return {
         result: result.value,

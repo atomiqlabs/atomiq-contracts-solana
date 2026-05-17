@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 use crate::SWAP_TYPE_COUNT;
+use crate::enums::{ClaimHandlerType, EscrowLifecycleState, RefundHandlerType};
 use crate::structs::SwapData;
 
 //Swap contract between offerer and claimer
@@ -24,11 +25,21 @@ pub struct EscrowState {
     //Security deposit, paid out to offerer in case swap expires and needs to be refunded.
     //Used to cover transaction fee and compensate for time value of money locked up in the contract.
     //Alway paid as native Solana, in Lamports
-    pub security_deposit: u64
+    pub security_deposit: u64,
+
+    //V2 lifecycle and routing metadata.
+    pub lifecycle_state: EscrowLifecycleState,
+    pub init_slot: u64,
+    pub finish_slot: u64,
+    pub escrow_hash: [u8; 32],
+    pub claim_handler: ClaimHandlerType,
+    pub refund_handler: RefundHandlerType,
+    pub success_action_commitment: [u8; 32],
 }
 
 impl EscrowState {
-    pub const SPACE: usize = 8 + 1 + 2 + 8 + 192 + 8 + 8 + 1 + 1 + 8 + 8 + 8 + 1;
+    //Keep a conservative allocation to avoid layout drift issues.
+    pub const SPACE: usize = 8 + 384;
 }
 
 //PDA format for storing user's (LP node's) balance and reputation

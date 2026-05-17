@@ -20,6 +20,19 @@ const program = workspace.SwapProgram as Program<SwapProgram>;
 const provider: AnchorProvider = AnchorProvider.local();
 const eventParser = new EventParser(program.programId, program.coder);
 
+async function getTransactionWithRetry(signature: string, retries: number = 20, delayMs: number = 500): Promise<any> {
+    for (let i = 0; i < retries; i++) {
+        const tx = await provider.connection.getTransaction(signature, {
+            commitment: "confirmed"
+        });
+        if (tx != null) {
+            return tx;
+        }
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    return null;
+}
+
 type RefundIXData = RefundIXDataNotPayIn | RefundIXDataPayIn;
 type RefundIXDataNotPayIn = {
     params: RefundIXParams,
@@ -378,9 +391,8 @@ function runTestsWith(payIn: boolean, payOut: boolean, refundType: "signed" | "t
             assert(initialClaimerLamports+pdaLamports-securityDeposit===postClaimerLamports, "Invalid claimer lamport balance, expected: "+(initialClaimerLamports+pdaLamports-securityDeposit)+" got: "+postClaimerLamports);
         }
         //Check that event was emitted
-        const tx = await provider.connection.getTransaction(signature, {
-            commitment: "confirmed"
-        });
+        const tx = await getTransactionWithRetry(signature);
+        assert(tx!=null, "Transaction not found by signature: "+signature);
         
         const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 

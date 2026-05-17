@@ -13,7 +13,7 @@ use crate::events::*;
 use crate::structs::*;
 
 //Processes & checks the claim data - uses data from data_account if provided, otherwise uses data passed in secret param, emits ClaimEvent, throws on failure
-pub fn process_claim(signer: &Signer, swap_data: &SwapData, ix_sysvar: &AccountInfo, data_account: &mut Option<UncheckedAccount>, secret: &[u8]) -> Result<()> {
+pub fn process_claim(signer: &Signer, swap_data: &SwapData, ix_sysvar: &AccountInfo, data_account: &mut Option<UncheckedAccount>, secret: &[u8]) -> Result<[u8; 32]> {
 
     let event_secret = match data_account {
         Some(data_acc) => {
@@ -51,7 +51,7 @@ pub fn process_claim(signer: &Signer, swap_data: &SwapData, ix_sysvar: &AccountI
         sequence: swap_data.sequence
     });
     
-    Ok(())
+    Ok(event_secret)
 }
 
 //Verifies if the claim is claimable by the claimer, provided the secret data (tx data or preimage for HTLC), returns the preimage (for HTLC, or TXHASH for PTLC)

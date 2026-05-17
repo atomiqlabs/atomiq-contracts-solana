@@ -65,4 +65,17 @@ pub enum SwapErrorCode {
     InvalidSwapDataPayIn,
     #[msg("Invalid swap data: nonce")]
     InvalidSwapDataNonce,
+
+    #[msg("Escrow state: already committed")]
+    EscrowAlreadyCommitted,
+    #[msg("Escrow state: not committed")]
+    EscrowNotCommitted,
+    #[msg("Escrow hash mismatch")]
+    EscrowHashMismatch,
+    #[msg("Invalid claim handler")]
+    InvalidClaimHandler,
+    #[msg("Invalid refund handler")]
+    InvalidRefundHandler,
+    #[msg("Invalid success action commitment")]
+    InvalidSuccessActionCommitment,
 }
