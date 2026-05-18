@@ -4,14 +4,14 @@ import { SwapProgram } from "../../target/types/swap_program";
 import BN from "bn.js";
 import nacl from "tweetnacl";
 import { TokenMint, getNewMint } from "../utils/tokens";
-import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault, SwapVaultAuthority } from "../utils/accounts";
+import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault } from "../utils/accounts";
 import { Account, TOKEN_PROGRAM_ID, getAccount } from "@solana/spl-token";
 import { assert } from "chai";
 import { getInitializedUserData } from "../utils/userData";
 import { randomBytes, createHash } from "crypto";
 import { EscrowStateType, SwapData, SwapType, SwapTypeEnum, getInitializeDefaultDataPayIn, getInitializedEscrowState, initializeDefaultAmount } from "../utils/escrowState";
 import { BtcRelayMainState, CommittedHeader, btcRelayProgram } from "../btcrelay/accounts";
-import { ParalelizedTest } from "../utils";
+import { getTxWithRetries, ParalelizedTest } from "../utils";
 import * as bitcoin from "bitcoinjs-lib";
 import { AnchorErrorCodes, CombinedProgramErrorType, SwapProgramError, parseSwapProgramError } from "../utils/program";
 import { getInitializedVault } from "../utils/vault";
@@ -97,7 +97,8 @@ type ClaimIXParams = {
 
 type ClaimIXAccounts = {
     signer: Keypair,
-    initializer: Keypair,
+    offerer: Keypair,
+    claimer: Keypair,
     escrowState: PublicKey,
     ixSysvar: PublicKey,
     data?: Keypair
@@ -108,7 +109,6 @@ type ClaimIXAccountsNotPayOut = ClaimIXAccounts & {
 type ClaimIXAccountsPayOut = ClaimIXAccounts & {
     claimerAta: PublicKey,
     vault: PublicKey,
-    vaultAuthority: PublicKey,
     tokenProgram: PublicKey
 };
 
@@ -117,6 +117,7 @@ export async function getClaimDefaultData(
     payOut: boolean,
     kind: SwapType,
     claimWithAccount: boolean,
+    offererInitializer: boolean,
     swapNonce: BN = new BN(0),
     secret?: Buffer,
     hash?: Buffer,
@@ -126,7 +127,9 @@ export async function getClaimDefaultData(
         txIndex: number,
         reversedMerkleProof: number[][],
         committedHeader: CommittedHeader
-    }
+    },
+    securityDeposit?: BN,
+    claimerBounty?: BN
 ): Promise<ClaimIXDataPayOut | ClaimIXDataNotPayOut> {
 
     const confirmations = btcRelayVerify!=null ? btcRelayVerify.confirmations : 6;
@@ -226,7 +229,9 @@ export async function getClaimDefaultData(
         }
     }
 
-    const escrowStateData = await getInitializedEscrowState(payIn, payOut, kind, undefined, hash, undefined, confirmations, swapNonce);
+    const escrowStateData = await getInitializedEscrowState(
+        payIn, payOut, kind, undefined, hash, undefined, confirmations, swapNonce, undefined, undefined, securityDeposit, claimerBounty, offererInitializer
+    );
 
     const params: ClaimIXParams = {
         secret: claimWithAccount ? null : [...secret]
@@ -238,7 +243,8 @@ export async function getClaimDefaultData(
 
     const _accounts: ClaimIXAccounts = {
         signer: signer,
-        initializer: payIn ? escrowStateData.offerer : escrowStateData.claimer,
+        offerer: escrowStateData.offerer,
+        claimer: escrowStateData.claimer,
         escrowState: SwapEscrowState(hash),
         ixSysvar: SYSVAR_INSTRUCTIONS_PUBKEY,
         data: null
@@ -263,7 +269,6 @@ export async function getClaimDefaultData(
         const accounts = _accounts as ClaimIXAccountsPayOut;
         accounts.claimerAta = escrowStateData.claimerAta;
         accounts.vault = SwapVault(escrowStateData.mint.mint);
-        accounts.vaultAuthority = SwapVaultAuthority;
         accounts.tokenProgram = TOKEN_PROGRAM_ID;
 
         return {
@@ -381,12 +386,12 @@ export async function claimExecutePayOut(
         Buffer.from(data.params.secret || [])
     ).accounts({
         signer: data.accounts.signer.publicKey,
-        initializer: data.accounts.initializer.publicKey,
+        offerer: data.accounts.offerer.publicKey,
+        claimer: data.accounts.claimer.publicKey,
         escrowState: data.accounts.escrowState,
         ixSysvar: data.accounts.ixSysvar,
         claimerAta: data.accounts.claimerAta,
         vault: data.accounts.vault,
-        vaultAuthority: data.accounts.vaultAuthority,
         tokenProgram: data.accounts.tokenProgram,
         data: data.accounts.data==null ? null : data.accounts.data.publicKey
     }).instruction();
@@ -524,7 +529,8 @@ export async function claimExecuteNotPayOut(
         Buffer.from(data.params.secret || [])
     ).accounts({
         signer: data.accounts.signer.publicKey,
-        initializer: data.accounts.initializer.publicKey,
+        offerer: data.accounts.offerer.publicKey,
+        claimer: data.accounts.claimer.publicKey,
         escrowState: data.accounts.escrowState,
         ixSysvar: data.accounts.ixSysvar,
         claimerUserData: data.accounts.claimerUserData,
@@ -614,7 +620,7 @@ async function saveClaimInitialState(data: ClaimIXData): Promise<ClaimInitialSta
 
 }
 
-async function verifyClaimInvariants(data: ClaimIXData, initialState: ClaimInitialState, result: SignatureResult, signature: string, signerPreBalance: number): Promise<void> {
+async function verifyClaimInvariants(data: ClaimIXData, initialState: ClaimInitialState, result: SignatureResult, signature: string, signerPreBalance: number, offererInitializer: boolean): Promise<void> {
 
     const payOut = data.escrowState.data.payOut;
     const payIn = data.escrowState.data.payIn;
@@ -647,21 +653,32 @@ async function verifyClaimInvariants(data: ClaimIXData, initialState: ClaimIniti
     const postClaimerLamports = await provider.connection.getBalance(data.escrowState.claimer.publicKey);
     const postSignerLamports = await provider.connection.getBalance(data.accounts.signer.publicKey);
 
-    if(payIn) {
-        assert(initialState.initialOffererLamports+initialState.pdaLamports===postOffererLamports, "Invalid offerer lamport balance, expected: "+(initialState.initialOffererLamports+initialState.pdaLamports)+" got: "+postOffererLamports);
-        assert(initialState.initialClaimerLamports===postClaimerLamports, "Invalid claimer lamport balance, expected: "+initialState.initialClaimerLamports+" got: "+postClaimerLamports);
-    } else {
-        const txFee = initialState.lamportsPerSignature;
-        let claimerBounty = data.escrowState.claimerBounty.toNumber();
-
-        assert(signerPreBalance+claimerBounty-txFee===postSignerLamports, "Invalid signer lamport balance, expected: "+(signerPreBalance+claimerBounty-txFee)+" got: "+postSignerLamports);
-        assert(initialState.initialClaimerLamports+initialState.pdaLamports-claimerBounty===postClaimerLamports, "Invalid claimer lamport balance, expected: "+(initialState.initialClaimerLamports+initialState.pdaLamports-claimerBounty)+" got: "+postClaimerLamports);
+    let expectedOffererBalanceChange = 0;
+    let expectedClaimerBalanceChange = 0;
+    let expectedSignerBalanceChange = 0;
+    const claimerBounty = data.escrowState.claimerBounty.toNumber();
+    const securityDeposit = data.escrowState.securityDeposit.toNumber();
+    if(claimerBounty > 0) {
+        expectedSignerBalanceChange += claimerBounty;
     }
+    if(securityDeposit > claimerBounty) {
+        expectedClaimerBalanceChange += securityDeposit - claimerBounty;
+    }
+    const leavesPdaBalance = initialState.pdaLamports - expectedOffererBalanceChange - expectedClaimerBalanceChange - expectedSignerBalanceChange;
+    if(offererInitializer) {
+        expectedOffererBalanceChange += leavesPdaBalance;
+    } else {
+        expectedClaimerBalanceChange += leavesPdaBalance;
+    }
+    const txFee = initialState.lamportsPerSignature;
+    expectedSignerBalanceChange -= txFee;
+
+    assert(initialState.initialOffererLamports+expectedOffererBalanceChange===postOffererLamports, "Invalid offerer lamport balance, expected change: "+expectedOffererBalanceChange+", expected: "+(initialState.initialOffererLamports+expectedOffererBalanceChange)+" got: "+postOffererLamports);
+    assert(initialState.initialClaimerLamports+expectedClaimerBalanceChange===postClaimerLamports, "Invalid claimer lamport balance, expected change: "+expectedClaimerBalanceChange+", expected: "+(initialState.initialClaimerLamports+expectedClaimerBalanceChange)+" got: "+postClaimerLamports);
+    assert(signerPreBalance+expectedSignerBalanceChange===postSignerLamports, "Invalid signer lamport balance, expected change: "+expectedSignerBalanceChange+", expected: "+(signerPreBalance+expectedSignerBalanceChange)+" got: "+postSignerLamports);
     
     //Check that event was emitted
-    const tx = await provider.connection.getTransaction(signature, {
-        commitment: "confirmed"
-    });
+    const tx = await getTxWithRetries(provider, signature);
     
     const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -691,43 +708,50 @@ async function verifyClaimInvariants(data: ClaimIXData, initialState: ClaimIniti
 
 const parallelTest = new ParalelizedTest();
 
-function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWithAccount: boolean) {
+function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWithAccount: boolean, offererInitializer: boolean) {
 
-    const prefix = "[payIn: "+payIn+" payOut: "+payOut+" kind: "+kind+" claimWithAccount: "+claimWithAccount+"] "
+    const prefix = "Claim [payIn: "+payIn+" payOut: "+payOut+" kind: "+kind+" claimWithAccount: "+claimWithAccount+" offererInitializer: "+offererInitializer+"] "
 
     const claimExecute: (data: ClaimIXData) => Promise<{result: SignatureResult, signature: string, signerPreBalance: number, error: CombinedProgramErrorType}> = payOut ? claimExecutePayOut : claimExecuteNotPayOut;
 
-    parallelTest.it(prefix+"Initialize and claim", async () => {
-        const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
+    const initializeAndClaim = (securityDeposit?: BN, claimerBounty?: BN) => {
+        return async () => {
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer, undefined, undefined, undefined, undefined, securityDeposit, claimerBounty);
 
-        const initialState = await saveClaimInitialState(data);
+            const initialState = await saveClaimInitialState(data);
 
-        const {result, signature, signerPreBalance} = await claimExecute(data);
+            const {result, signature, signerPreBalance} = await claimExecute(data);
 
-        await verifyClaimInvariants(data, initialState, result, signature, signerPreBalance);
-    });
+            await verifyClaimInvariants(data, initialState, result, signature, signerPreBalance, offererInitializer);
+        };
+    }
+
+    parallelTest.it(prefix+"Initialize and claim", initializeAndClaim());
+    parallelTest.it(prefix+"Initialize and claim: deposit exceeds rent exempt lamports, securityDeposit > claimerBounty", initializeAndClaim(new BN(50_000_000), new BN(40_000_000)));
+    parallelTest.it(prefix+"Initialize and claim: deposit exceeds rent exempt lamports, securityDeposit < claimerBounty", initializeAndClaim(new BN(40_000_000), new BN(50_000_000)));
+    parallelTest.it(prefix+"Initialize and claim: deposit exceeds rent exempt lamports, securityDeposit == claimerBounty", initializeAndClaim(new BN(50_000_000), new BN(50_000_000)));
 
     if(kind==="htlc") {
         parallelTest.it(prefix+"HTLC claim with right padded gibberish", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer);
 
             const initialState = await saveClaimInitialState(data);
 
             const {result, signature, signerPreBalance} = await claimExecute(data);
     
-            await verifyClaimInvariants(data, initialState, result, signature, signerPreBalance);
+            await verifyClaimInvariants(data, initialState, result, signature, signerPreBalance, offererInitializer);
         });
     }
 
     if(kind==="chainTxhash") {
         parallelTest.it(prefix+"chainTxhash with gibberish data (should be ignored)", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer);
 
             const initialState = await saveClaimInitialState(data);
 
             const {result, signature, signerPreBalance} = await claimExecute(data);
     
-            await verifyClaimInvariants(data, initialState, result, signature, signerPreBalance);
+            await verifyClaimInvariants(data, initialState, result, signature, signerPreBalance, offererInitializer);
         });
     }
 
@@ -785,18 +809,18 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
                 receiveAddress.output
             ])).digest();
 
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, swapNonce, secret, hash, btcRelayVerify);
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer, swapNonce, secret, hash, btcRelayVerify);
 
             const initialState = await saveClaimInitialState(data);
 
             const {result, signature, signerPreBalance} = await claimExecute(data);
     
-            await verifyClaimInvariants(data, initialState, result, signature, signerPreBalance);
+            await verifyClaimInvariants(data, initialState, result, signature, signerPreBalance, offererInitializer);
         });
     }
 
     parallelTest.it(prefix+"Wrong escrow_state (wrong data.pay_out)", async () => {
-        const _data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
+        const _data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer);
 
         if(payOut) {
             const data = _data as ClaimIXDataNotPayOut;
@@ -805,7 +829,6 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
             const data = _data as ClaimIXDataPayOut;
             data.accounts.claimerAta = await data.escrowState.mint.mintTo(data.escrowState.claimer.publicKey, initializeDefaultAmount);
             data.accounts.vault = await getInitializedVault(data.escrowState.mint, initializeDefaultAmount);
-            data.accounts.vaultAuthority = SwapVaultAuthority;
             data.accounts.tokenProgram = TOKEN_PROGRAM_ID;
         }
 
@@ -814,20 +837,20 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
         assert(error==="ConstraintRaw", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
     });
 
-    parallelTest.it(prefix+"Wrong initializer (random)", async () => {
-        const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
+    parallelTest.it(prefix+"Wrong offerer (random)", async () => {
+        const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer);
 
-        data.accounts.initializer = Keypair.generate();
+        data.accounts.offerer = Keypair.generate();
 
         const {result, signature, signerPreBalance, error} = await claimExecute(data);
 
         assert(error==="ConstraintRaw", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
     });
 
-    parallelTest.it(prefix+"Wrong initializer (switched)", async () => {
-        const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
+    parallelTest.it(prefix+"Wrong claimer (random)", async () => {
+        const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer);
 
-        data.accounts.initializer = payIn ? data.escrowState.claimer : data.escrowState.offerer;
+        data.accounts.claimer = Keypair.generate();
 
         const {result, signature, signerPreBalance, error} = await claimExecute(data);
 
@@ -835,7 +858,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
     });
 
     parallelTest.it(prefix+"Wrong ix sysvar", async () => {
-        const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
+        const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer);
 
         data.accounts.ixSysvar = Keypair.generate().publicKey;
 
@@ -847,7 +870,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
     if(claimWithAccount) {
 
         parallelTest.it(prefix+"Invalid data account (belongs to different key)", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer);
     
             const otherSigner = Keypair.generate();
             await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(otherSigner.publicKey, 1000000000));
@@ -864,7 +887,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
     if(kind==="htlc") {
 
         parallelTest.it(prefix+"Wrong secret", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer);
 
             if(claimWithAccount) {
                 data.dataAccount.data = randomBytes(32);
@@ -881,7 +904,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
             const secret = randomBytes(24);
             const hash = createHash("sha256").update(secret).digest();
 
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, undefined, secret, hash);
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer, undefined, secret, hash);
 
             const {result, signature, signerPreBalance, error} = await claimExecute(data);
 
@@ -920,7 +943,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
             const vout = new BN(0);
             const btcTxSerialized = btcTx.toBuffer();
 
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, swapNonce);
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer, swapNonce);
 
             data.btcRelayVerify.reversedTxId = [...createHash("sha256").update(createHash("sha256").update(btcTxSerialized).digest()).digest()];
 
@@ -938,7 +961,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
         });
 
         parallelTest.it(prefix+"Wrong transaction output specified", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount);
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer);
             
             if(claimWithAccount) {
                 const initialData = data.dataAccount.data;
@@ -1006,7 +1029,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
                 receiveScript
             ])).digest();
 
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, swapNonce, secret, hash, btcRelayVerify);
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer, swapNonce, secret, hash, btcRelayVerify);
             
             const {result, signature, signerPreBalance, error} = await claimExecute(data);
 
@@ -1059,7 +1082,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
                 receiveAddress.output
             ])).digest();
 
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, swapNonce, secret, hash, btcRelayVerify);
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer, swapNonce, secret, hash, btcRelayVerify);
 
             const {result, signature, signerPreBalance, error} = await claimExecute(data);
 
@@ -1108,7 +1131,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
                 receiveAddress.output
             ])).digest();
 
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, swapNonce, secret, hash, btcRelayVerify);
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer, swapNonce, secret, hash, btcRelayVerify);
 
             const {result, signature, signerPreBalance, error} = await claimExecute(data);
 
@@ -1157,7 +1180,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
                 receiveAddress.output
             ])).digest();
 
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, swapNonce, secret, hash, btcRelayVerify);
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer, swapNonce, secret, hash, btcRelayVerify);
 
             const {result, signature, signerPreBalance, error} = await claimExecute(data);
 
@@ -1207,7 +1230,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
                 receiveAddress.output
             ])).digest();
 
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, swapNonce, secret, hash, btcRelayVerify);
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer, swapNonce, secret, hash, btcRelayVerify);
 
             const {result, signature, signerPreBalance, error} = await claimExecute(data);
 
@@ -1219,7 +1242,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
     if(kind==="chain" || kind==="chainNonced" || kind==="chainTxhash") {
         
         parallelTest.it(prefix+"Missing btcrelay verify instruction", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount) as ClaimIXDataPayOut;
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer) as ClaimIXDataPayOut;
     
             data.btcRelayVerify = null;
 
@@ -1229,7 +1252,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
         });
 
         parallelTest.it(prefix+"Wrong btcrelay verify confirmations", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount) as ClaimIXDataPayOut;
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer) as ClaimIXDataPayOut;
     
             data.btcRelayVerify.confirmations -= 3;
 
@@ -1239,7 +1262,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
         });
 
         parallelTest.it(prefix+"Wrong btcrelay tx hash verified", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount) as ClaimIXDataPayOut;
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer) as ClaimIXDataPayOut;
     
             data.btcRelayVerify.reversedTxId = [...randomBytes(32)];
 
@@ -1253,7 +1276,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
     if(payOut) {
 
         parallelTest.it(prefix+"Uninitialized claimer ata", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount) as ClaimIXDataPayOut;
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer) as ClaimIXDataPayOut;
     
             await data.escrowState.mint.closeAta(data.escrowState.claimer);
 
@@ -1263,7 +1286,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
         });
 
         parallelTest.it(prefix+"Claimer ata of other mint", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount) as ClaimIXDataPayOut;
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer) as ClaimIXDataPayOut;
     
             const otherMint = await getNewMint();
             data.accounts.claimerAta = await otherMint.mintTo(data.escrowState.claimer.publicKey, initializeDefaultAmount);
@@ -1274,7 +1297,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
         });
 
         parallelTest.it(prefix+"Bad mint vault", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount) as ClaimIXDataPayOut;
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer) as ClaimIXDataPayOut;
     
             const otherMint = await getNewMint();
             data.accounts.vault = await getInitializedVault(otherMint, initializeDefaultAmount);
@@ -1284,20 +1307,10 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
             assert(error==="ConstraintSeeds", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
         });
 
-        parallelTest.it(prefix+"Wrong vault authority", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount) as ClaimIXDataPayOut;
-    
-            data.accounts.vaultAuthority = RandomPDA();
-
-            const {result, signature, signerPreBalance, error} = await claimExecute(data);
-    
-            assert(error==="ConstraintSeeds", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
-        });
-
     } else {
         
         parallelTest.it(prefix+"ClaimerUserData of other signer", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount) as ClaimIXDataNotPayOut;
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer) as ClaimIXDataNotPayOut;
     
             const otherClaimer = Keypair.generate();
             await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(otherClaimer.publicKey, 1000000000));
@@ -1310,7 +1323,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
         });
 
         parallelTest.it(prefix+"ClaimerUserData of other mint", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount) as ClaimIXDataNotPayOut;
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer) as ClaimIXDataNotPayOut;
     
             const otherMint = await getNewMint();
 
@@ -1322,7 +1335,7 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
         });
 
         parallelTest.it(prefix+"ClaimerUserData of other signer & mint", async () => {
-            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount) as ClaimIXDataNotPayOut;
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer) as ClaimIXDataNotPayOut;
     
             const otherMint = await getNewMint();
 
@@ -1344,6 +1357,7 @@ describe("swap-program: Claim", () => {
 
     const payInVariants = [false, true];
     const payOutVariants = [false, true];
+    const offererInitializerVariants = [false, true];
     const kindVariants: SwapType[] = ["htlc", "chain", "chainNonced", "chainTxhash"];
     const claimVariants = [false, true];
 
@@ -1351,7 +1365,9 @@ describe("swap-program: Claim", () => {
         for(let payOut of payOutVariants) {
             for(let kind of kindVariants) {
                 for(let claim of claimVariants) {
-                    runTestsWith(payIn, payOut, kind, claim);
+                    for(let offererInitializer of offererInitializerVariants) {
+                        runTestsWith(payIn, payOut, kind, claim, offererInitializer);
+                    }
                 }
             }
         }

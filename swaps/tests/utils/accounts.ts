@@ -5,13 +5,7 @@ import { createHash, randomBytes } from "crypto";
 const STATE_SEED = "state";
 const VAULT_SEED = "vault";
 const USER_VAULT_SEED = "uservault";
-const AUTHORITY_SEED = "authority";
 const TX_DATA_SEED = "data";
-
-export const SwapVaultAuthority: PublicKey = PublicKey.findProgramAddressSync(
-    [Buffer.from(AUTHORITY_SEED)],
-    workspace.SwapProgram.programId
-)[0];
 
 export const RandomPDA: () => PublicKey = () => PublicKey.findProgramAddressSync(
     [randomBytes(32)],

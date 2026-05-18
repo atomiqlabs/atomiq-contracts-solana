@@ -3,7 +3,7 @@ import { AnchorProvider, EventParser, Program, workspace, Event, IdlEvents } fro
 import { SwapProgram } from "../../target/types/swap_program";
 import BN, { min } from "bn.js";
 import { TokenMint, getNewMint } from "../utils/tokens";
-import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault, SwapVaultAuthority } from "../utils/accounts";
+import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault } from "../utils/accounts";
 import { Account, TOKEN_PROGRAM_ID, getAccount } from "@solana/spl-token";
 import { assert } from "chai";
 import { getInitializedUserData } from "../utils/userData";
@@ -84,18 +84,18 @@ export type InitializeIXDataPayIn = {
 
 export type InitializeIXParams = {
     swapData: SwapData,
+    securityDeposit: BN,
+    claimerBounty: BN,
     txoHash: number[],
     authExpiry: BN
 };
-export type InitializeIXParamsNotPayIn = InitializeIXParams & {
-    securityDeposit: BN,
-    claimerBounty: BN,
-};
+export type InitializeIXParamsNotPayIn = InitializeIXParams;
 export type InitializeIXParamsPayIn = InitializeIXParams;
 
 export type InitializeIXAccounts = {
     claimer: Keypair,
     offerer: Keypair,
+    initializer: Keypair,
     escrowState: PublicKey,
     mint: PublicKey,
     systemProgram: PublicKey,
@@ -108,7 +108,6 @@ export type InitializeIXAccountsNotPayIn = InitializeIXAccounts & {
 export type InitializeIXAccountsPayIn = InitializeIXAccounts & {
     offererAta: PublicKey,
     vault: PublicKey,
-    vaultAuthority: PublicKey,
     tokenProgram: PublicKey
 };
 
@@ -116,6 +115,7 @@ export async function getInitializeDefaultDataNotPayIn(
     payOut: boolean,
     noInitClaimer?: boolean,
     noInitOfferer?: boolean,
+    offererInitialize: boolean = false,
     kind: SwapType = "htlc", 
     expiry: number = Math.floor(Date.now()/1000) + 3600, 
     hash: Buffer = randomBytes(32), 
@@ -156,12 +156,13 @@ export async function getInitializeDefaultDataNotPayIn(
     const accounts: InitializeIXAccountsNotPayIn = {
         claimer,
         offerer,
+        initializer: offererInitialize ? offerer : claimer,
         offererUserData,
         escrowState,
         mint,
         systemProgram,
         claimerAta: null,
-        claimerUserData: null
+        claimerUserData: null,
     }
 
     await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(claimer.publicKey, 1000000000));
@@ -194,6 +195,7 @@ export async function getInitializeDefaultDataPayIn(
     payOut: boolean,
     noInitClaimer?: boolean,
     noInitOfferer?: boolean,
+    offererInitialize: boolean = true,
     kind: SwapType = "htlc", 
     expiry: number = Math.floor(Date.now()/1000) + 3600, 
     hash: Buffer = randomBytes(32), 
@@ -201,7 +203,9 @@ export async function getInitializeDefaultDataPayIn(
     confirmations: number = 0, 
     nonce: BN = kind==="chainNonced" ? new BN(Buffer.concat([new BN(Math.floor((Date.now()/1000)) - 700000000).toBuffer(), randomBytes(3)])) : new BN(0),
     sequence: BN = new BN(randomBytes(8)),
-    txoHash: Buffer = randomBytes(32)
+    txoHash: Buffer = randomBytes(32),
+    securityDeposit: BN = new BN(Math.floor(Math.random()*50000)),
+    claimerBounty: BN = new BN(Math.floor(Math.random()*50000))
 ): Promise<InitializeIXDataPayIn> {
     const params: InitializeIXParamsPayIn = {
         swapData: {
@@ -215,6 +219,8 @@ export async function getInitializeDefaultDataPayIn(
             expiry: new BN(expiry),
             sequence
         },
+        securityDeposit,
+        claimerBounty,
         txoHash: [...txoHash],
         authExpiry: new BN(Math.floor(Date.now()/1000) + 3600)
     }
@@ -225,7 +231,6 @@ export async function getInitializeDefaultDataPayIn(
     const offererAta = mintData.getATA(offerer.publicKey);
     const escrowState = SwapEscrowState(hash);
     const vault = SwapVault(mintData.mint);
-    const vaultAuthority = SwapVaultAuthority;
     const tokenProgram = TOKEN_PROGRAM_ID;
     const mint = mintData.mint;
     const systemProgram = SystemProgram.programId;
@@ -233,6 +238,7 @@ export async function getInitializeDefaultDataPayIn(
     const accounts: InitializeIXAccountsPayIn = {
         claimer,
         offerer,
+        initializer: offererInitialize ? offerer : claimer,
         offererAta,
         escrowState,
         mint,
@@ -240,7 +246,6 @@ export async function getInitializeDefaultDataPayIn(
         claimerAta: null,
         claimerUserData: null,
         vault,
-        vaultAuthority,
         tokenProgram
     }
 
@@ -270,7 +275,7 @@ export async function getInitializeDefaultDataPayIn(
     };
 }
 
-export async function initializeExecuteNotPayIn(data: InitializeIXDataNotPayIn): Promise<{result:SignatureResult, signature: string, error: CombinedProgramErrorType}> {
+export async function initializeExecuteNotPayIn(data: InitializeIXDataNotPayIn, claimerNoSign?: boolean): Promise<{result:SignatureResult, signature: string, error: CombinedProgramErrorType}> {
     
     const tx = await program.methods.offererInitialize(
         data.params.swapData as any,
@@ -281,6 +286,7 @@ export async function initializeExecuteNotPayIn(data: InitializeIXDataNotPayIn):
     ).accounts({
         claimer: data.accounts.claimer.publicKey,
         offerer: data.accounts.offerer.publicKey,
+        initializer: data.accounts.initializer.publicKey,
         offererUserData: data.accounts.offererUserData,
         escrowState: data.accounts.escrowState,
         mint: data.accounts.mint,
@@ -289,11 +295,17 @@ export async function initializeExecuteNotPayIn(data: InitializeIXDataNotPayIn):
         claimerAta: data.accounts.claimerAta,
     }).transaction();
 
-    tx.feePayer = data.accounts.claimer.publicKey;
+    tx.feePayer = data.accounts.initializer.publicKey;
 
-    const signature = await provider.connection.sendTransaction(tx, [data.accounts.claimer, data.accounts.offerer], {
-        skipPreflight: true
-    });
+    const signature = await provider.connection.sendTransaction(
+        tx,
+        !data.params.swapData.payOut && !claimerNoSign
+            ? [data.accounts.offerer, data.accounts.claimer, data.accounts.initializer]
+            : [data.accounts.offerer, data.accounts.initializer],
+        {
+            skipPreflight: true
+        }
+    );
     const result = await provider.connection.confirmTransaction(signature, "confirmed");
 
     return {
@@ -304,19 +316,21 @@ export async function initializeExecuteNotPayIn(data: InitializeIXDataNotPayIn):
 
 }
 
-export async function initializeExecutePayIn(data: InitializeIXDataPayIn): Promise<{result:SignatureResult, signature: string, error: CombinedProgramErrorType}> {
+export async function initializeExecutePayIn(data: InitializeIXDataPayIn, claimerNoSign?: boolean): Promise<{result:SignatureResult, signature: string, error: CombinedProgramErrorType}> {
     
     const tx = await program.methods.offererInitializePayIn(
         data.params.swapData as any,
+        data.params.securityDeposit,
+        data.params.claimerBounty,
         data.params.txoHash,
         data.params.authExpiry
     ).accounts({
         claimer: data.accounts.claimer.publicKey,
         offerer: data.accounts.offerer.publicKey,
+        initializer: data.accounts.initializer.publicKey,
         offererAta: data.accounts.offererAta,
         escrowState: data.accounts.escrowState,
         vault: data.accounts.vault,
-        vaultAuthority: data.accounts.vaultAuthority,
         tokenProgram: data.accounts.tokenProgram,
         mint: data.accounts.mint,
         systemProgram: data.accounts.systemProgram,
@@ -324,11 +338,17 @@ export async function initializeExecutePayIn(data: InitializeIXDataPayIn): Promi
         claimerAta: data.accounts.claimerAta,
     }).transaction();
 
-    tx.feePayer = data.accounts.offerer.publicKey;
+    tx.feePayer = data.accounts.initializer.publicKey;
 
-    const signature = await provider.connection.sendTransaction(tx, [data.accounts.claimer, data.accounts.offerer], {
-        skipPreflight: true
-    });
+    const signature = await provider.connection.sendTransaction(
+        tx,
+        !data.params.swapData.payOut && !claimerNoSign
+            ? [data.accounts.offerer, data.accounts.claimer, data.accounts.initializer]
+            : [data.accounts.offerer, data.accounts.initializer],
+        {
+            skipPreflight: true
+        }
+    );
     const result = await provider.connection.confirmTransaction(signature, "confirmed");
 
     return {
@@ -351,13 +371,14 @@ export async function getInitializedEscrowState(
     sequence: BN = new BN(randomBytes(8)),
     txoHash: Buffer = randomBytes(32),
     securityDeposit: BN = new BN(Math.floor(Math.random()*50000)),
-    claimerBounty: BN = new BN(Math.floor(Math.random()*50000))
+    claimerBounty: BN = new BN(Math.floor(Math.random()*50000)),
+    offererInitialize?: boolean
 ): Promise<EscrowStateType> {
 
     let escrowState: EscrowStateType;
     let txResult;
     if(payIn) {
-        const data = await getInitializeDefaultDataPayIn(payOut, undefined, undefined, kind, expiry, hash, amount, confirmations, nonce, sequence, txoHash);
+        const data = await getInitializeDefaultDataPayIn(payOut, undefined, undefined, offererInitialize, kind, expiry, hash, amount, confirmations, nonce, sequence, txoHash, securityDeposit, claimerBounty);
         escrowState = {
             data: data.params.swapData,
             offerer: data.accounts.offerer,
@@ -365,13 +386,13 @@ export async function getInitializedEscrowState(
             claimer: data.accounts.claimer,
             claimerAta: data.accounts.claimerAta || PublicKey.default,
             mint: data.mintData,
-            claimerBounty: new BN(0),
-            securityDeposit: new BN(0)
+            claimerBounty,
+            securityDeposit
         }
         const {result} = await initializeExecutePayIn(data);
         txResult = result;
     } else {
-        const data = await getInitializeDefaultDataNotPayIn(payOut, undefined, undefined, kind, expiry, hash, amount, confirmations, nonce, sequence, txoHash, securityDeposit, claimerBounty);
+        const data = await getInitializeDefaultDataNotPayIn(payOut, undefined, undefined, offererInitialize, kind, expiry, hash, amount, confirmations, nonce, sequence, txoHash, securityDeposit, claimerBounty);
         escrowState = {
             data: data.params.swapData,
             offerer: data.accounts.offerer,

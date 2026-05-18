@@ -33,16 +33,9 @@ pub struct Deposit<'info> {
         bump,
         payer = signer,
         token::mint = mint,
-        token::authority = vault_authority,
+        token::authority = vault,
     )]
     pub vault: Account<'info, TokenAccount>,
-
-    /// CHECK: This account is not being read from, it is only an authority for the contract token vaults
-    #[account(
-        seeds = [b"authority".as_ref()],
-        bump
-    )]
-    pub vault_authority: AccountInfo<'info>,
     
     //Required data
     pub mint: Account<'info, Mint>,
@@ -78,16 +71,9 @@ pub struct Withdraw<'info> {
         seeds = [b"vault".as_ref(), mint.to_account_info().key.as_ref()],
         bump,
         token::mint = mint,
-        token::authority = vault_authority,
+        token::authority = vault,
     )]
     pub vault: Account<'info, TokenAccount>,
-
-    /// CHECK: This account is not being read from, it is only an authority for the contract token vaults
-    #[account(
-        seeds = [b"authority".as_ref()],
-        bump
-    )]
-    pub vault_authority: AccountInfo<'info>,
 
     //Required data
     pub mint: Account<'info, Mint>,
@@ -99,9 +85,18 @@ pub struct Withdraw<'info> {
     swap_data: SwapData
 )]
 pub struct InitializePayIn<'info> {
-    #[account(mut)]
     pub offerer: Signer<'info>,
-    pub claimer: Signer<'info>,
+    /// CHECK: Optional signer only if swap_data.pay_out==false
+    #[account(
+        constraint = swap_data.pay_out || claimer.is_signer
+    )]
+    pub claimer: AccountInfo<'info>,
+
+    #[account(
+         mut,
+         constraint = initializer.key==offerer.key || initializer.key==claimer.key
+    )]
+    pub initializer: Signer<'info>,
 
     //Account of the token for initializer
     #[account(
@@ -116,7 +111,7 @@ pub struct InitializePayIn<'info> {
         init,
         seeds = [b"state".as_ref(), swap_data.hash.as_ref()],
         bump,
-        payer = offerer,
+        payer = initializer,
         space = EscrowState::SPACE,
         //We need to verify existence of the recipient (either ATA or UserData PDA)
         constraint = if swap_data.pay_out { claimer_ata.is_some() } else { claimer_user_data.is_some() }
@@ -128,18 +123,11 @@ pub struct InitializePayIn<'info> {
         init_if_needed,
         seeds = [b"vault".as_ref(), mint.to_account_info().key.as_ref()],
         bump,
-        payer = offerer,
+        payer = initializer,
         token::mint = mint,
-        token::authority = vault_authority,
+        token::authority = vault,
     )]
     pub vault: Account<'info, TokenAccount>,
-
-    /// CHECK: This account is not being read from, it is only an authority for the contract token vaults
-    #[account(
-        seeds = [b"authority".as_ref()],
-        bump
-    )]
-    pub vault_authority: AccountInfo<'info>,
 
     //Required data
     pub mint: Account<'info, Mint>,
@@ -158,10 +146,7 @@ pub struct InitializePayIn<'info> {
     ////////////////////////////////////////
     //For pay out
     ////////////////////////////////////////
-    #[account(
-        token::mint = mint
-    )]
-    pub claimer_ata: Option<Account<'info, TokenAccount>>,
+    pub claimer_ata: Option<AccountInfo<'info>>,
 }
 
 #[derive(Accounts)]
@@ -169,9 +154,18 @@ pub struct InitializePayIn<'info> {
     swap_data: SwapData
 )]
 pub struct Initialize<'info> {
-    #[account(mut)]
-    pub claimer: Signer<'info>,
     pub offerer: Signer<'info>,
+    /// CHECK: Optional signer only if swap_data.pay_out==false
+    #[account(
+        constraint = swap_data.pay_out || claimer.is_signer
+    )]
+    pub claimer: AccountInfo<'info>,
+
+    #[account(
+         mut,
+         constraint = initializer.key==offerer.key || initializer.key==claimer.key
+    )]
+    pub initializer: Signer<'info>,
 
     //Account of the token for initializer
     #[account(
@@ -187,7 +181,7 @@ pub struct Initialize<'info> {
         init,
         seeds = [b"state".as_ref(), swap_data.hash.as_ref()],
         bump,
-        payer = claimer,
+        payer = initializer,
         space = EscrowState::SPACE,
         //We need to verify existence of the recipient (either ATA or UserData PDA)
         constraint = if swap_data.pay_out { claimer_ata.is_some() } else { claimer_user_data.is_some() }
@@ -210,10 +204,7 @@ pub struct Initialize<'info> {
     ////////////////////////////////////////
     //For pay out
     ////////////////////////////////////////
-    #[account(
-        token::mint = mint
-    )]
-    pub claimer_ata: Option<Account<'info, TokenAccount>>
+    pub claimer_ata: Option<AccountInfo<'info>>
 }
 
 #[derive(Accounts)]
@@ -222,7 +213,8 @@ pub struct Refund<'info> {
     //Main data
     ////////////////////////////////////////
     #[account(mut)]
-    pub offerer: Signer<'info>,
+    /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
+    pub offerer: AccountInfo<'info>,
     /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
     #[account(mut)]
     pub claimer: AccountInfo<'info>,
@@ -269,7 +261,8 @@ pub struct RefundPayIn<'info> {
     //Main data
     ////////////////////////////////////////
     #[account(mut)]
-    pub offerer: Signer<'info>,
+    /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
+    pub offerer: AccountInfo<'info>,
     /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
     #[account(mut)]
     pub claimer: AccountInfo<'info>,
@@ -295,12 +288,6 @@ pub struct RefundPayIn<'info> {
         bump,
     )]
     pub vault: Account<'info, TokenAccount>,
-    /// CHECK: This account is not being read from, it is only an authority for the contract token vaults
-    #[account(
-        seeds = [b"authority".as_ref()],
-        bump
-    )]
-    pub vault_authority: AccountInfo<'info>,
     pub token_program: Program<'info, Token>,
 
     ////////////////////////////////////////
@@ -329,12 +316,15 @@ pub struct Claim<'info> {
 
     /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
     #[account(mut)]
-    pub initializer: AccountInfo<'info>,
+    pub offerer: AccountInfo<'info>,
+    /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
+    #[account(mut)]
+    pub claimer: AccountInfo<'info>,
 
     #[account(
         mut,
         constraint = !escrow_state.data.pay_out,
-        constraint = if escrow_state.data.pay_in { escrow_state.offerer == *initializer.key } else { escrow_state.claimer == *initializer.key },
+        constraint = escrow_state.offerer == *offerer.key && escrow_state.claimer == *claimer.key,
     )]
     pub escrow_state: Box<Account<'info, EscrowState>>,
 
@@ -364,13 +354,16 @@ pub struct ClaimPayOut<'info> {
 
     /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
     #[account(mut)]
-    pub initializer: AccountInfo<'info>,
+    pub offerer: AccountInfo<'info>,
+    /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
+    #[account(mut)]
+    pub claimer: AccountInfo<'info>,
 
     #[account(
         mut,
         constraint = escrow_state.claimer_ata == claimer_ata.key(),
         constraint = escrow_state.data.pay_out,
-        constraint = if escrow_state.data.pay_in { escrow_state.offerer == *initializer.key } else { escrow_state.claimer == *initializer.key },
+        constraint = escrow_state.offerer == *offerer.key && escrow_state.claimer == *claimer.key,
     )]
     pub escrow_state: Box<Account<'info, EscrowState>>,
 
@@ -390,12 +383,6 @@ pub struct ClaimPayOut<'info> {
         bump,
     )]
     pub vault: Box<Account<'info, TokenAccount>>,
-    /// CHECK: This account is not being read from, it is only an authority for the contract token vaults
-    #[account(
-        seeds = [b"authority".as_ref()],
-        bump
-    )]
-    pub vault_authority: AccountInfo<'info>,
     pub token_program: Program<'info, Token>,
 
     ///////////////////////////////////////////
@@ -455,7 +442,7 @@ impl<'info> Withdraw<'info> {
         let cpi_accounts = Transfer {
             from: self.vault.to_account_info(),
             to: self.signer_ata.to_account_info(),
-            authority: self.vault_authority.clone(),
+            authority: self.vault.to_account_info(),
         };
         CpiContext::new(self.token_program.to_account_info(), cpi_accounts)
     }
@@ -479,7 +466,7 @@ impl<'info> RefundPayIn<'info> {
         let cpi_accounts = Transfer {
             from: self.vault.to_account_info(),
             to: self.offerer_ata.to_account_info(),
-            authority: self.vault_authority.clone(),
+            authority: self.vault.to_account_info(),
         };
         CpiContext::new(self.token_program.to_account_info(), cpi_accounts)
     }
@@ -490,7 +477,7 @@ impl<'info> ClaimPayOut<'info> {
         let cpi_accounts = Transfer {
             from: self.vault.to_account_info(),
             to: self.claimer_ata.to_account_info(),
-            authority: self.vault_authority.clone(),
+            authority: self.vault.to_account_info(),
         };
         CpiContext::new(self.token_program.to_account_info(), cpi_accounts)
     }

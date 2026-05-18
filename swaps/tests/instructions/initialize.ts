@@ -3,13 +3,13 @@ import { AnchorProvider, EventParser, Program, workspace, Event, IdlEvents } fro
 import { SwapProgram } from "../../target/types/swap_program";
 import BN, { min } from "bn.js";
 import { TokenMint, getNewMint } from "../utils/tokens";
-import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault, SwapVaultAuthority } from "../utils/accounts";
+import { RandomPDA, SwapEscrowState, SwapUserVault, SwapVault } from "../utils/accounts";
 import { Account, TOKEN_PROGRAM_ID, getAccount } from "@solana/spl-token";
 import { assert } from "chai";
 import { getInitializedUserData } from "../utils/userData";
 import { randomBytes } from "crypto";
 import { InitializeIXData, InitializeIXDataNotPayIn, InitializeIXDataPayIn, SwapData, SwapType, SwapTypeEnum, getInitializeDefaultDataNotPayIn, getInitializeDefaultDataPayIn, initializeDefaultAmount, initializeExecuteNotPayIn, initializeExecutePayIn } from "../utils/escrowState";
-import { ParalelizedTest } from "../utils";
+import { getTxWithRetries, ParalelizedTest } from "../utils";
 import { CombinedProgramErrorType } from "../utils/program";
 import { getInitializedVault } from "../utils/vault";
 
@@ -26,11 +26,12 @@ const parallelTest = new ParalelizedTest();
 
 function runCommonTest(
     prefix: string,
-    execute: (data: InitializeIXData) => Promise<{result:SignatureResult, signature: string, error: CombinedProgramErrorType}>,
+    execute: (data: InitializeIXData, claimerNoSign?: boolean) => Promise<{result:SignatureResult, signature: string, error: CombinedProgramErrorType}>,
     getDefaultInitializeData: (
         payOut: boolean,
         noInitClaimer?: boolean,
         noInitOfferer?: boolean,
+        offererInitializer?: boolean,
         kind?: SwapType, 
         expiry?: number, 
         hash?: Buffer, 
@@ -38,9 +39,18 @@ function runCommonTest(
         confirmations?: number, 
         nonce?: BN,
         sequence?: BN,
-        txoHash?: Buffer
+        txoHash?: Buffer,
+        securityDeposit?: BN,
+        claimerBounty?: BN
     ) => Promise<InitializeIXData>
 ) {
+    parallelTest.it(prefix+"payOut=true: Uninitialized claimerAta", async () => {
+        const data = await getDefaultInitializeData(true, true);
+
+        const {result, signature, error} = await execute(data);
+
+        assert(error==null, "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
+    });
 
     parallelTest.it(prefix+"Initialize with wrong payIn", async () => {
         const data = await getDefaultInitializeData(true);
@@ -50,7 +60,6 @@ function runCommonTest(
         if(data.params.swapData.payIn) {
             (data as InitializeIXDataPayIn).accounts.offererAta = await data.mintData.mintTo(data.accounts.offerer.publicKey, initializeDefaultAmount);
             (data as InitializeIXDataPayIn).accounts.vault = SwapVault(data.mintData.mint);
-            (data as InitializeIXDataPayIn).accounts.vaultAuthority = SwapVaultAuthority;
             (data as InitializeIXDataPayIn).accounts.tokenProgram = TOKEN_PROGRAM_ID;
         } else {
             (data as InitializeIXDataNotPayIn).accounts.offererUserData = await getInitializedUserData(data.accounts.offerer, data.mintData, initializeDefaultAmount);
@@ -59,6 +68,17 @@ function runCommonTest(
         const {result, signature, error} = await execute(data);
 
         assert(error==="InvalidSwapDataPayIn", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
+    });
+
+    parallelTest.it(prefix+"Random initializer", async () => {
+        const data = await getDefaultInitializeData(true);
+        
+        data.accounts.initializer = Keypair.generate();
+        await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(data.accounts.initializer.publicKey, 1_000_000_000));
+
+        const {result, signature, error} = await execute(data);
+
+        assert(error==="ConstraintRaw", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
     });
 
     parallelTest.it(prefix+"Expired authorization", async () => {
@@ -88,18 +108,15 @@ function runCommonTest(
 
         assert(result.err==null, "Transaction error: "+JSON.stringify(result.err, null, 4));
 
-        const data2 = await getDefaultInitializeData(true, undefined, undefined, undefined, undefined, Buffer.from(data.params.swapData.hash));
+        const data2 = await getDefaultInitializeData(true, undefined, undefined, undefined, undefined, undefined, Buffer.from(data.params.swapData.hash));
         
         const {result: result2, signature: signature2, error} = await execute(data2);
-
-        // const txData = await provider.connection.getTransaction(signature2, { commitment: "confirmed" });
-        // console.log("Transaction logs: ", txData.meta.logMessages);
 
         assert(error==="AccountAlreadyInitialized", "Invalid transaction error ("+error+"): "+JSON.stringify(result2.err));
     });
     
     parallelTest.it(prefix+"Too many confirmations", async () => {
-        const data = await getDefaultInitializeData(true, undefined, undefined, undefined, undefined, undefined, undefined, 250);
+        const data = await getDefaultInitializeData(true, undefined, undefined, undefined, undefined, undefined, undefined, undefined, 250);
 
         const {result, signature, error} = await execute(data);
 
@@ -107,7 +124,7 @@ function runCommonTest(
     });
 
     parallelTest.it(prefix+"Kind===HTLC but nonce provided", async () => {
-        const data = await getDefaultInitializeData(true, undefined, undefined, "htlc", undefined, undefined, undefined, undefined, new BN(randomBytes(8)));
+        const data = await getDefaultInitializeData(true, undefined, undefined, undefined, "htlc", undefined, undefined, undefined, undefined, new BN(randomBytes(8)));
 
         const {result, signature, error} = await execute(data);
 
@@ -115,7 +132,7 @@ function runCommonTest(
     });
 
     parallelTest.it(prefix+"Kind===Chain but nonce provided", async () => {
-        const data = await getDefaultInitializeData(true, undefined, undefined, "chain", undefined, undefined, undefined, undefined, new BN(randomBytes(8)));
+        const data = await getDefaultInitializeData(true, undefined, undefined, undefined, "chain", undefined, undefined, undefined, undefined, new BN(randomBytes(8)));
 
         const {result, signature, error} = await execute(data);
 
@@ -123,30 +140,11 @@ function runCommonTest(
     });
 
     parallelTest.it(prefix+"Kind===chainTxhash but nonce provided", async () => {
-        const data = await getDefaultInitializeData(true, undefined, undefined, "chainTxhash", undefined, undefined, undefined, undefined, new BN(randomBytes(8)));
+        const data = await getDefaultInitializeData(true, undefined, undefined, undefined, "chainTxhash", undefined, undefined, undefined, undefined, new BN(randomBytes(8)));
 
         const {result, signature, error} = await execute(data);
 
         assert(error==="InvalidSwapDataNonce", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
-    });
-
-    parallelTest.it(prefix+"payOut=true: Uninitialized claimerAta", async () => {
-        const data = await getDefaultInitializeData(true, true);
-
-        const {result, signature, error} = await execute(data);
-
-        assert(error==="AccountNotInitialized", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
-    });
-
-    parallelTest.it(prefix+"payOut=true: claimerAta of other mint", async () => {
-        const data = await getDefaultInitializeData(true, true);
-
-        const otherMint = await getNewMint();
-        data.accounts.claimerAta = await otherMint.mintTo(data.accounts.claimer.publicKey, escrowAmount);
-
-        const {result, signature, error} = await execute(data);
-
-        assert(error==="ConstraintTokenMint", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
     });
 
     parallelTest.it(prefix+"payOut=false: Uninitialized claimerUserData", async () => {
@@ -192,6 +190,89 @@ function runCommonTest(
 
         assert(error==="ConstraintSeeds", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
     });
+
+    parallelTest.it(prefix+"payOut=false: claimer doesn't sign", async () => {
+        const data = await getDefaultInitializeData(false, undefined, undefined, true);
+
+        const {result, signature, error} = await execute(data, true);
+
+        assert(error==="ConstraintRaw", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
+    });
+
+    const runDepositTests = (offererInitializer: boolean) => {
+        parallelTest.it(prefix+"Deposits above escrow state rent exempt amount, securityDeposit > claimerBounty, offererInitializer: "+offererInitializer, async () => {
+            const data = await getDefaultInitializeData(
+                false, undefined, undefined, offererInitializer, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+                new BN(50_000_000), //Ensure this is larger than the escrow state rent exempt amount
+                new BN(40_000_000), // claimer bounty is below the security deposit
+            );
+
+            const initializerPreBalance = await provider.connection.getBalance(data.accounts.initializer.publicKey);
+            const escrowPreBalance = await provider.connection.getBalance(data.accounts.escrowState);
+
+            const {result, signature, error} = await execute(data);
+
+            const initializerPostBalance = await provider.connection.getBalance(data.accounts.initializer.publicKey);
+            const escrowPostBalance = await provider.connection.getBalance(data.accounts.escrowState);
+
+            const tx = await getTxWithRetries(provider, signature);
+
+            const expectedDepositAndFees = tx.meta.fee + 50_000_000;
+
+            assert(initializerPreBalance-expectedDepositAndFees===initializerPostBalance, `Invalid initializer balance, pre-balance: ${initializerPreBalance}, post-balance: ${initializerPostBalance}, expected difference: ${expectedDepositAndFees}`);
+            assert(escrowPreBalance+50_000_000===escrowPostBalance, `Invalid escrow balance, pre-balance: ${escrowPreBalance}, post-balance: ${escrowPostBalance}, expected difference: ${50_000_000}`);
+        });
+
+        parallelTest.it(prefix+"Deposits above escrow state rent exempt amount, securityDeposit < claimerBounty, offererInitializer: "+offererInitializer, async () => {
+            const data = await getDefaultInitializeData(
+                false, undefined, undefined, offererInitializer, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+                new BN(40_000_000), //Ensure this is larger than the escrow state rent exempt amount
+                new BN(50_000_000), // claimer bounty is above the security deposit
+            );
+
+            const initializerPreBalance = await provider.connection.getBalance(data.accounts.initializer.publicKey);
+            const escrowPreBalance = await provider.connection.getBalance(data.accounts.escrowState);
+
+            const {result, signature, error} = await execute(data);
+
+            const initializerPostBalance = await provider.connection.getBalance(data.accounts.initializer.publicKey);
+            const escrowPostBalance = await provider.connection.getBalance(data.accounts.escrowState);
+
+            const tx = await getTxWithRetries(provider, signature);
+
+            const expectedDepositAndFees = tx.meta.fee + 50_000_000;
+
+            assert(initializerPreBalance-expectedDepositAndFees===initializerPostBalance, `Invalid initializer balance, pre-balance: ${initializerPreBalance}, post-balance: ${initializerPostBalance}, expected difference: ${expectedDepositAndFees}`);
+            assert(escrowPreBalance+50_000_000===escrowPostBalance, `Invalid escrow balance, pre-balance: ${escrowPreBalance}, post-balance: ${escrowPostBalance}, expected difference: ${50_000_000}`);
+        });
+
+        parallelTest.it(prefix+"Deposits above escrow state rent exempt amount, securityDeposit == claimerBounty, offererInitializer: "+offererInitializer, async () => {
+            const data = await getDefaultInitializeData(
+                false, undefined, undefined, offererInitializer, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+                new BN(50_000_000), //Ensure this is larger than the escrow state rent exempt amount
+                new BN(50_000_000), // claimer bounty is exactly the same as security deposit
+            );
+
+            const initializerPreBalance = await provider.connection.getBalance(data.accounts.initializer.publicKey);
+            const escrowPreBalance = await provider.connection.getBalance(data.accounts.escrowState);
+
+            const {result, signature, error} = await execute(data);
+
+            const initializerPostBalance = await provider.connection.getBalance(data.accounts.initializer.publicKey);
+            const escrowPostBalance = await provider.connection.getBalance(data.accounts.escrowState);
+
+            const tx = await getTxWithRetries(provider, signature);
+
+            const expectedDepositAndFees = tx.meta.fee + 50_000_000;
+
+            assert(initializerPreBalance-expectedDepositAndFees===initializerPostBalance, `Invalid initializer balance, pre-balance: ${initializerPreBalance}, post-balance: ${initializerPostBalance}, expected difference: ${expectedDepositAndFees}`);
+            assert(escrowPreBalance+50_000_000===escrowPostBalance, `Invalid escrow balance, pre-balance: ${escrowPreBalance}, post-balance: ${escrowPostBalance}, expected difference: ${50_000_000}`);
+        });
+    };
+
+    runDepositTests(true);
+    runDepositTests(false);
+
 }
 
 describe("swap-program: Initialize", () => {
@@ -199,16 +280,19 @@ describe("swap-program: Initialize", () => {
     {
         const prefix = "Initialize(NOT payIn): ";
         
-        parallelTest.it(prefix+"Initialize payOut=true", async () => {
-            const data = await getInitializeDefaultDataNotPayIn(true);
+        const validInitializePayOut = (offererInitializer: boolean) => async () => {
+            const data = await getInitializeDefaultDataNotPayIn(true, undefined, undefined, offererInitializer);
+            const nonInitializer = offererInitializer ? data.accounts.claimer.publicKey : data.accounts.offerer.publicKey;
             
             const initialUserDataBalance = await program.account.userAccount.fetchNullable(data.accounts.offererUserData).then(e => e==null ? new BN(0) : e.amount);
+            const initialNonInitializerBalance = await provider.connection.getBalance(nonInitializer);
 
             const {result, signature} = await initializeExecuteNotPayIn(data);
 
             assert(result.err==null, "Transaction error: "+JSON.stringify(result.err, null, 4));
 
             const postUserDataBalance = await program.account.userAccount.fetchNullable(data.accounts.offererUserData).then(e => e==null ? new BN(0) : e.amount);
+            const postNonInitializerBalance = await provider.connection.getBalance(nonInitializer);
             const escrowState = await program.account.escrowState.fetchNullable(data.accounts.escrowState);
 
             assert(initialUserDataBalance.sub(escrowAmount).eq(postUserDataBalance), "User data balance error");
@@ -222,11 +306,11 @@ describe("swap-program: Initialize", () => {
             assert(escrowState.offerer.equals(data.accounts.offerer.publicKey), "Escrow: Invalid offerer!");
             assert(escrowState.offererAta.equals(PublicKey.default), "Escrow: Invalid offererAta!");
             assert(escrowState.securityDeposit.eq(data.params.securityDeposit), "Escrow: Invalid securityDeposit!");
+            assert(escrowState.offererInitializer===offererInitializer, "Escrow: Invalid offererInitializer!");
+            assert(initialNonInitializerBalance===postNonInitializerBalance, "Escrow: Invalid non-initializer balance!");
             
             //Check that event was emitted
-            const tx = await provider.connection.getTransaction(signature, {
-                commitment: "confirmed"
-            });
+            const tx = await getTxWithRetries(provider, signature);
             
             const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -252,18 +336,24 @@ describe("swap-program: Initialize", () => {
 
             assert(eventFound, "Event: not emitted!");
 
-        });
+        };
 
-        parallelTest.it(prefix+"Initialize payOut=false", async () => {
-            const data = await getInitializeDefaultDataNotPayIn(false);
+        parallelTest.it(prefix+"Initialize payOut=true offererInitializer=false", validInitializePayOut(false));
+        parallelTest.it(prefix+"Initialize payOut=true offererInitializer=true", validInitializePayOut(true));
+
+        const validInitializeNonPayOut = (offererInitializer: boolean) => async () => {
+            const data = await getInitializeDefaultDataNotPayIn(false, undefined, undefined, offererInitializer);
+            const nonInitializer = offererInitializer ? data.accounts.claimer.publicKey : data.accounts.offerer.publicKey;
             
             const initialUserDataBalance = await program.account.userAccount.fetchNullable(data.accounts.offererUserData).then(e => e==null ? new BN(0) : e.amount);
+            const initialNonInitializerBalance = await provider.connection.getBalance(nonInitializer);
 
             const {result, signature} = await initializeExecuteNotPayIn(data);
 
             assert(result.err==null, "Transaction error: "+JSON.stringify(result.err, null, 4));
 
             const postUserDataBalance = await program.account.userAccount.fetchNullable(data.accounts.offererUserData).then(e => e==null ? new BN(0) : e.amount);
+            const postNonInitializerBalance = await provider.connection.getBalance(nonInitializer);
             const escrowState = await program.account.escrowState.fetchNullable(data.accounts.escrowState);
 
             assert(initialUserDataBalance.sub(escrowAmount).eq(postUserDataBalance), "User data balance error");
@@ -277,11 +367,11 @@ describe("swap-program: Initialize", () => {
             assert(escrowState.offerer.equals(data.accounts.offerer.publicKey), "Escrow: Invalid offerer!");
             assert(escrowState.offererAta.equals(PublicKey.default), "Escrow: Invalid offererAta!");
             assert(escrowState.securityDeposit.eq(data.params.securityDeposit), "Escrow: Invalid securityDeposit!");
+            assert(escrowState.offererInitializer==offererInitializer, "Escrow: Invalid offererInitializer!");
+            assert(initialNonInitializerBalance===postNonInitializerBalance, "Escrow: Invalid non-initializer balance!");
             
             //Check that event was emitted
-            const tx = await provider.connection.getTransaction(signature, {
-                commitment: "confirmed"
-            });
+            const tx = await getTxWithRetries(provider, signature);
             
             const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -307,7 +397,10 @@ describe("swap-program: Initialize", () => {
 
             assert(eventFound, "Event: not emitted!");
 
-        });
+        };
+
+        parallelTest.it(prefix+"Initialize payOut=false offererInitializer=false", validInitializeNonPayOut(false));
+        parallelTest.it(prefix+"Initialize payOut=false offererInitializer=true", validInitializeNonPayOut(true));
 
         runCommonTest(prefix, initializeExecuteNotPayIn, getInitializeDefaultDataNotPayIn);
 
@@ -375,11 +468,13 @@ describe("swap-program: Initialize", () => {
     {
         const prefix = "Initialize(payIn): ";
         
-        parallelTest.it(prefix+"Initialize payOut=true", async () => {
-            const data = await getInitializeDefaultDataPayIn(true);
+        const validInitializePayOut = (offererInitializer: boolean) => async () => {
+            const data = await getInitializeDefaultDataPayIn(true, undefined, undefined, offererInitializer);
+            const nonInitializer = offererInitializer ? data.accounts.claimer.publicKey : data.accounts.offerer.publicKey;
             
             const initialOffererAtaBalance = await getAccount(provider.connection, data.accounts.offererAta).then(e => new BN(e.amount.toString()));
             const initialVaultBalance = await getAccount(provider.connection, data.accounts.vault).catch(e => {}).then(e => e==null ? new BN(0) : new BN((e as Account).amount.toString()));
+            const initialNonInitializerBalance = await provider.connection.getBalance(nonInitializer);
 
             const {result, signature} = await initializeExecutePayIn(data);
 
@@ -387,6 +482,7 @@ describe("swap-program: Initialize", () => {
 
             const postOffererAtaBalance = await getAccount(provider.connection, data.accounts.offererAta).then(e => new BN(e.amount.toString()));
             const postVaultBalance = await getAccount(provider.connection, data.accounts.vault).catch(e => {}).then(e => e==null ? new BN(0) : new BN((e as Account).amount.toString()));
+            const postNonInitializerBalance = await provider.connection.getBalance(nonInitializer);
             const escrowState = await program.account.escrowState.fetchNullable(data.accounts.escrowState);
 
             assert(initialOffererAtaBalance.sub(escrowAmount).eq(postOffererAtaBalance), "Offerer ata balance error");
@@ -395,17 +491,17 @@ describe("swap-program: Initialize", () => {
             assert(escrowState!=null, "Escrow not created!");
             assert(escrowState.claimer.equals(data.accounts.claimer.publicKey), "Escrow: Invalid claimer!");
             assert(escrowState.claimerAta.equals(data.accounts.claimerAta), "Escrow: Invalid claimerAta!");
-            assert(escrowState.claimerBounty.eq(new BN(0)), "Escrow: Invalid claimerBounty!");
+            assert(escrowState.claimerBounty.eq(data.params.claimerBounty), "Escrow: Invalid claimerBounty!");
             assert(SwapData.equals(escrowState.data, data.params.swapData), "Escrow: Invalid swapData!");
             assert(escrowState.mint.equals(data.accounts.mint), "Escrow: Invalid mint!");
             assert(escrowState.offerer.equals(data.accounts.offerer.publicKey), "Escrow: Invalid offerer!");
             assert(escrowState.offererAta.equals(data.accounts.offererAta), "Escrow: Invalid offererAta!");
-            assert(escrowState.securityDeposit.eq(new BN(0)), "Escrow: Invalid securityDeposit!");
+            assert(escrowState.securityDeposit.eq(data.params.securityDeposit), "Escrow: Invalid securityDeposit!");
+            assert(escrowState.offererInitializer===offererInitializer, "Escrow: Invalid offererInitializer!");
+            assert(initialNonInitializerBalance===postNonInitializerBalance, "Escrow: Invalid non-initializer balance!");
             
             //Check that event was emitted
-            const tx = await provider.connection.getTransaction(signature, {
-                commitment: "confirmed"
-            });
+            const tx = await getTxWithRetries(provider, signature);
             
             const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -431,13 +527,18 @@ describe("swap-program: Initialize", () => {
 
             assert(eventFound, "Event: not emitted!");
 
-        });
+        };
+        
+        parallelTest.it(prefix+"Initialize payOut=true offererInitialize=false", validInitializePayOut(false));
+        parallelTest.it(prefix+"Initialize payOut=true offererInitialize=true", validInitializePayOut(true));
 
-        parallelTest.it(prefix+"Initialize payOut=false", async () => {
-            const data = await getInitializeDefaultDataPayIn(false);
+        const validInitializeNonPayOut = (offererInitializer: boolean) => async () => {
+            const data = await getInitializeDefaultDataPayIn(false, undefined, undefined, offererInitializer);
+            const nonInitializer = offererInitializer ? data.accounts.claimer.publicKey : data.accounts.offerer.publicKey;
             
             const initialOffererAtaBalance = await getAccount(provider.connection, data.accounts.offererAta).then(e => new BN(e.amount.toString()));
             const initialVaultBalance = await getAccount(provider.connection, data.accounts.vault).catch(e => {}).then(e => e==null ? new BN(0) : new BN((e as Account).amount.toString()));
+            const initialNonInitializerBalance = await provider.connection.getBalance(nonInitializer);
 
             const {result, signature} = await initializeExecutePayIn(data);
 
@@ -445,6 +546,7 @@ describe("swap-program: Initialize", () => {
 
             const postOffererAtaBalance = await getAccount(provider.connection, data.accounts.offererAta).then(e => new BN(e.amount.toString()));
             const postVaultBalance = await getAccount(provider.connection, data.accounts.vault).catch(e => {}).then(e => e==null ? new BN(0) : new BN((e as Account).amount.toString()));
+            const postNonInitializerBalance = await provider.connection.getBalance(nonInitializer);
             const escrowState = await program.account.escrowState.fetchNullable(data.accounts.escrowState);
 
             assert(result.err==null, "Transaction error: "+JSON.stringify(result.err, null, 4));
@@ -455,17 +557,17 @@ describe("swap-program: Initialize", () => {
             assert(escrowState!=null, "Escrow not created!");
             assert(escrowState.claimer.equals(data.accounts.claimer.publicKey), "Escrow: Invalid claimer!");
             assert(escrowState.claimerAta.equals(PublicKey.default), "Escrow: Invalid claimerAta!");
-            assert(escrowState.claimerBounty.eq(new BN(0)), "Escrow: Invalid claimerBounty!");
+            assert(escrowState.claimerBounty.eq(data.params.claimerBounty), "Escrow: Invalid claimerBounty!");
             assert(SwapData.equals(escrowState.data, data.params.swapData), "Escrow: Invalid swapData!");
             assert(escrowState.mint.equals(data.accounts.mint), "Escrow: Invalid mint!");
             assert(escrowState.offerer.equals(data.accounts.offerer.publicKey), "Escrow: Invalid offerer!");
             assert(escrowState.offererAta.equals(data.accounts.offererAta), "Escrow: Invalid offererAta!");
-            assert(escrowState.securityDeposit.eq(new BN(0)), "Escrow: Invalid securityDeposit!");
+            assert(escrowState.securityDeposit.eq(data.params.securityDeposit), "Escrow: Invalid securityDeposit!");
+            assert(escrowState.offererInitializer===offererInitializer, "Escrow: Invalid offererInitializer!");
+            assert(initialNonInitializerBalance===postNonInitializerBalance, "Escrow: Invalid non-initializer balance!");
             
             //Check that event was emitted
-            const tx = await provider.connection.getTransaction(signature, {
-                commitment: "confirmed"
-            });
+            const tx = await getTxWithRetries(provider, signature);
             
             const parsedEvents = eventParser.parseLogs(tx.meta.logMessages);
 
@@ -491,7 +593,10 @@ describe("swap-program: Initialize", () => {
 
             assert(eventFound, "Event: not emitted!");
 
-        });
+        };
+
+        parallelTest.it(prefix+"Initialize payOut=false offererInitialize=false", validInitializeNonPayOut(false));
+        parallelTest.it(prefix+"Initialize payOut=false offererInitialize=true", validInitializeNonPayOut(true));
 
         runCommonTest(prefix, initializeExecutePayIn, getInitializeDefaultDataPayIn);
 
@@ -529,16 +634,6 @@ describe("swap-program: Initialize", () => {
 
             const otherMint = await getNewMint();
             data.accounts.vault = await getInitializedVault(otherMint, initializeDefaultAmount);
-
-            const {result, signature, error} = await initializeExecutePayIn(data);
-
-            assert(error==="ConstraintSeeds", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
-        });
-        
-        parallelTest.it(prefix+"Wrong vault authority", async () => {
-            const data = await getInitializeDefaultDataPayIn(true);
-
-            data.accounts.vaultAuthority = RandomPDA();
 
             const {result, signature, error} = await initializeExecutePayIn(data);
 
