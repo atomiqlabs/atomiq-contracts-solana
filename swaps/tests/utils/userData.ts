@@ -1,5 +1,5 @@
 
-import { Keypair, SystemProgram, PublicKey } from "@solana/web3.js";
+import { Keypair, SystemProgram, PublicKey, Transaction } from "@solana/web3.js";
 import { AnchorProvider, Program, workspace } from "@coral-xyz/anchor";
 import { SwapProgram } from "../../target/types/swap_program";
 import * as BN from "bn.js";
@@ -11,24 +11,39 @@ import { assert } from "chai";
 const program = workspace.SwapProgram as Program<SwapProgram>;
 const provider: AnchorProvider = AnchorProvider.local();
 
-export async function getInitializedUserData(signer: Keypair, mintData: TokenMint, depositAmount: BN, closeAta?: boolean): Promise<PublicKey> {
-
-    const signerAta = await mintData.mintTo(signer.publicKey, depositAmount);
-    const userData = SwapUserVault(signer.publicKey, mintData.mint);
-    const vault = SwapVault(mintData.mint);
-    const mint = mintData.mint;
+export async function getInitializedUserData(signer: Keypair, mintData: TokenMint | null, depositAmount: BN, closeAta?: boolean): Promise<PublicKey> {
     const systemProgram = SystemProgram.programId;
-    const tokenProgram = TOKEN_PROGRAM_ID;
-    
-    const tx = await program.methods.deposit(depositAmount).accounts({
-        signer: signer.publicKey,
-        signerAta,
-        userData,
-        vault,
-        mint,
-        systemProgram,
-        tokenProgram
-    }).transaction();
+
+    let userData: PublicKey;
+    let tx: Transaction;
+    if(mintData!=null) {
+        const signerAta = await mintData.mintTo(signer.publicKey, depositAmount);
+        userData = SwapUserVault(signer.publicKey, mintData.mint);
+        const vault = SwapVault(mintData.mint);
+        const mint = mintData.mint;
+        const tokenProgram = TOKEN_PROGRAM_ID;
+        
+        tx = await program.methods.deposit(depositAmount).accounts({
+            signer: signer.publicKey,
+            signerAta,
+            userData,
+            vault,
+            mint,
+            systemProgram,
+            tokenProgram
+        }).transaction();
+    } else {
+        await provider.connection.confirmTransaction(await provider.connection.requestAirdrop(signer.publicKey, depositAmount.toNumber()));
+        userData = SwapUserVault(signer.publicKey, PublicKey.default);
+        const vault = SwapVault(PublicKey.default);
+        
+        tx = await program.methods.depositSol(depositAmount).accounts({
+            signer: signer.publicKey,
+            userData,
+            vault,
+            systemProgram
+        }).transaction();
+    }
 
     tx.feePayer = signer.publicKey;
 
