@@ -1,4 +1,7 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{
+    prelude::*,
+    system_program
+};
 use crate::*;
 use crate::USER_DATA_SEED;
 
@@ -45,6 +48,34 @@ pub struct Deposit<'info> {
 
 #[derive(Accounts)]
 #[instruction(amount: u64)]
+pub struct DepositSol<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    //Account holding the tokens
+    #[account(
+        init_if_needed,
+        seeds = [USER_DATA_SEED, signer.to_account_info().key.as_ref(), Pubkey::default().as_ref()],
+        bump,
+        payer = signer,
+        space = UserAccount::SPACE
+    )]
+    pub user_data: Account<'info, UserAccount>,
+
+    #[account(
+        init_if_needed,
+        seeds = [b"vault", Pubkey::default().as_ref()],
+        bump,
+        payer = signer,
+        space = SolVault::SPACE,
+    )]
+    pub vault: Account<'info, SolVault>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(amount: u64)]
 pub struct Withdraw<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
@@ -78,6 +109,29 @@ pub struct Withdraw<'info> {
     //Required data
     pub mint: Account<'info, Mint>,
     pub token_program: Program<'info, Token>
+}
+
+#[derive(Accounts)]
+#[instruction(amount: u64)]
+pub struct WithdrawSol<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    //Account holding the tokens
+    #[account(
+        mut,
+        seeds = [USER_DATA_SEED, signer.to_account_info().key.as_ref(), Pubkey::default().as_ref()],
+        bump = user_data.bump,
+        constraint = user_data.amount >= amount
+    )]
+    pub user_data: Account<'info, UserAccount>,
+    
+    #[account(
+        mut,
+        seeds = [b"vault", Pubkey::default().as_ref()],
+        bump
+    )]
+    pub vault: Account<'info, SolVault>
 }
 
 #[derive(Accounts)]
@@ -153,6 +207,60 @@ pub struct InitializePayIn<'info> {
 #[instruction(
     swap_data: SwapData
 )]
+pub struct InitializePayInSol<'info> {
+    #[account(mut)]
+    pub offerer: Signer<'info>,
+    /// CHECK: Optional signer only if swap_data.pay_out==false
+    #[account(
+        constraint = swap_data.pay_out || claimer.is_signer
+    )]
+    pub claimer: AccountInfo<'info>,
+
+    #[account(
+         mut,
+         constraint = initializer.key==offerer.key || initializer.key==claimer.key
+    )]
+    pub initializer: Signer<'info>,
+
+    //Data storage account
+    #[account(
+        init,
+        seeds = [b"state".as_ref(), swap_data.hash.as_ref()],
+        bump,
+        payer = initializer,
+        space = EscrowState::SPACE,
+        //We need to verify existence of the recipient (either ATA or UserData PDA)
+        constraint = swap_data.pay_out || claimer_user_data.is_some()
+    )]
+    pub escrow_state: Box<Account<'info, EscrowState>>,
+
+    //Account holding the tokens
+    #[account(
+        init_if_needed,
+        seeds = [b"vault", Pubkey::default().as_ref()],
+        bump,
+        payer = initializer,
+        space = SolVault::SPACE,
+    )]
+    pub vault: Account<'info, SolVault>,
+
+    //Required data
+    pub system_program: Program<'info, System>,
+    
+    ////////////////////////////////////////
+    //For NOT Pay out
+    ////////////////////////////////////////
+    #[account(
+        seeds = [USER_DATA_SEED, claimer.key.as_ref(), Pubkey::default().as_ref()],
+        bump = claimer_user_data.bump
+    )]
+    pub claimer_user_data: Option<Account<'info, UserAccount>>
+}
+
+#[derive(Accounts)]
+#[instruction(
+    swap_data: SwapData
+)]
 pub struct Initialize<'info> {
     pub offerer: Signer<'info>,
     /// CHECK: Optional signer only if swap_data.pay_out==false
@@ -205,6 +313,58 @@ pub struct Initialize<'info> {
     //For pay out
     ////////////////////////////////////////
     pub claimer_ata: Option<AccountInfo<'info>>
+}
+
+#[derive(Accounts)]
+#[instruction(
+    swap_data: SwapData
+)]
+pub struct InitializeSol<'info> {
+    pub offerer: Signer<'info>,
+    /// CHECK: Optional signer only if swap_data.pay_out==false
+    #[account(
+        constraint = swap_data.pay_out || claimer.is_signer
+    )]
+    pub claimer: AccountInfo<'info>,
+
+    #[account(
+         mut,
+         constraint = initializer.key==offerer.key || initializer.key==claimer.key
+    )]
+    pub initializer: Signer<'info>,
+
+    //Account of the token for initializer
+    #[account(
+        mut,
+        seeds = [USER_DATA_SEED, offerer.key.as_ref(), Pubkey::default().as_ref()],
+        bump = offerer_user_data.bump,
+        constraint = offerer_user_data.amount >= swap_data.amount
+    )]
+    pub offerer_user_data: Account<'info, UserAccount>,
+    
+    //Data storage account
+    #[account(
+        init,
+        seeds = [b"state".as_ref(), swap_data.hash.as_ref()],
+        bump,
+        payer = initializer,
+        space = EscrowState::SPACE,
+        //We need to verify existence of the recipient (either ATA or UserData PDA)
+        constraint = swap_data.pay_out || claimer_user_data.is_some()
+    )]
+    pub escrow_state: Box<Account<'info, EscrowState>>,
+
+    //Required data
+    pub system_program: Program<'info, System>,
+
+    ////////////////////////////////////////
+    //For NOT Pay out
+    ////////////////////////////////////////
+    #[account(
+        seeds = [USER_DATA_SEED, claimer.key.as_ref(), Pubkey::default().as_ref()],
+        bump = claimer_user_data.bump
+    )]
+    pub claimer_user_data: Option<Account<'info, UserAccount>>
 }
 
 #[derive(Accounts)]
@@ -310,6 +470,54 @@ pub struct RefundPayIn<'info> {
 }
 
 #[derive(Accounts)]
+pub struct RefundPayInSol<'info> {
+    ////////////////////////////////////////
+    //Main data
+    ////////////////////////////////////////
+    #[account(mut)]
+    /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
+    pub offerer: AccountInfo<'info>,
+    /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
+    #[account(mut)]
+    pub claimer: AccountInfo<'info>,
+
+    #[account(
+        mut,
+        constraint = escrow_state.offerer == *offerer.key,
+        constraint = escrow_state.claimer == *claimer.key,
+        constraint = escrow_state.data.pay_in,
+        constraint = escrow_state.data.pay_out || claimer_user_data.is_some(),
+        constraint = escrow_state.mint == Pubkey::default()
+    )]
+    pub escrow_state: Box<Account<'info, EscrowState>>,
+
+    #[account(
+        mut,
+        seeds = [b"vault", Pubkey::default().as_ref()],
+        bump
+    )]
+    pub vault: Account<'info, SolVault>,
+
+    ////////////////////////////////////////
+    //For NOT Pay out
+    ////////////////////////////////////////
+    //User data account of the claimer, used to lower his reputation
+    #[account(
+        mut,
+        seeds = [USER_DATA_SEED, claimer.key.as_ref(), escrow_state.mint.as_ref()],
+        bump = claimer_user_data.bump,
+    )]
+    pub claimer_user_data: Option<Account<'info, UserAccount>>,
+
+    ////////////////////////////////////////
+    //For Refund with signature
+    ////////////////////////////////////////
+    /// CHECK: We are not reading nor writing to this account, it is used to verify the previous IX in the transaction and its address is fixed to IX_ID
+    #[account(address = IX_ID)]
+    pub ix_sysvar: Option<AccountInfo<'info>>
+}
+
+#[derive(Accounts)]
 pub struct Claim<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
@@ -393,6 +601,44 @@ pub struct ClaimPayOut<'info> {
 }
 
 #[derive(Accounts)]
+pub struct ClaimPayOutSol<'info> {
+    #[account(mut)]
+    pub signer: Signer<'info>,
+
+    /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
+    #[account(mut)]
+    pub offerer: AccountInfo<'info>,
+    /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
+    #[account(mut)]
+    pub claimer: AccountInfo<'info>,
+
+    #[account(
+        mut,
+        constraint = escrow_state.data.pay_out,
+        constraint = escrow_state.offerer == *offerer.key && escrow_state.claimer == *claimer.key,
+        constraint = escrow_state.mint == Pubkey::default()
+    )]
+    pub escrow_state: Box<Account<'info, EscrowState>>,
+
+    /// CHECK: We are not reading nor writing to this account, it is used to verify the previous IX in the transaction and its address is fixed to IX_ID
+    #[account(address = IX_ID)]
+    pub ix_sysvar: AccountInfo<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"vault", Pubkey::default().as_ref()],
+        bump
+    )]
+    pub vault: Account<'info, SolVault>,
+
+    ///////////////////////////////////////////
+    //For Using external data account
+    ///////////////////////////////////////////
+    #[account(mut)]
+    pub data: Option<UncheckedAccount<'info>>,
+}
+
+#[derive(Accounts)]
 pub struct InitData<'info> {
     #[account(mut)]
     pub signer: Signer<'info>,
@@ -435,6 +681,16 @@ impl<'info> Deposit<'info> {
     }
 }
 
+impl<'info> DepositSol<'info> {
+    pub fn get_transfer_to_vault_context(&self) -> CpiContext<'_, '_, '_, 'info, system_program::Transfer<'info>> {
+        let cpi_accounts = system_program::Transfer{
+            from: self.signer.to_account_info(),
+            to: self.vault.to_account_info()
+        };
+        CpiContext::new(self.system_program.to_account_info(), cpi_accounts)
+    }
+}
+
 impl<'info> Withdraw<'info> {
     pub fn get_transfer_to_signer_context(
         &self,
@@ -456,6 +712,16 @@ impl<'info> InitializePayIn<'info> {
             authority: self.offerer.to_account_info(),
         };
         CpiContext::new(self.token_program.to_account_info(), cpi_accounts)
+    }
+}
+
+impl<'info> InitializePayInSol<'info> {
+    pub fn get_transfer_to_pda_context(&self) -> CpiContext<'_, '_, '_, 'info, system_program::Transfer<'info>> {
+        let cpi_accounts = system_program::Transfer{
+            from: self.offerer.to_account_info(),
+            to: self.vault.to_account_info()
+        };
+        CpiContext::new(self.system_program.to_account_info(), cpi_accounts)
     }
 }
 

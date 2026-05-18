@@ -25,7 +25,7 @@ pub fn process_initialize<'info>(
     claimer: &AccountInfo<'info>,
     initializer: &AccountInfo<'info>,
     claimer_ata: &Option<AccountInfo<'info>>,
-    mint: &Account<'info, Mint>,
+    mint: Option<&Account<'info, Mint>>,
 
     swap_data: &SwapData,
     
@@ -59,11 +59,12 @@ pub fn process_initialize<'info>(
     escrow_state.offerer = *offerer.key;
     escrow_state.claimer = *claimer.to_account_info().key;
 
-    if swap_data.pay_out {
+    // Only check for SPL tokens, and pay out cases
+    if swap_data.pay_out && mint.is_some() {
         let claimer_ata = claimer_ata.as_ref().expect("Claimer ATA not provided for pay_out=true swap");
         escrow_state.claimer_ata = *claimer_ata.key;
     }
-    escrow_state.mint = *mint.to_account_info().key;
+    escrow_state.mint = if mint.is_some() { *mint.unwrap().to_account_info().key } else { Pubkey::default() };
 
     escrow_state.offerer_initializer = offerer.key == initializer.key;
 

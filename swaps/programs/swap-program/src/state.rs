@@ -63,3 +63,10 @@ pub struct UserAccount {
 impl UserAccount {
     pub const SPACE: usize = 8 + 8 + (8*6*SWAP_TYPE_COUNT) + 1;
 }
+
+#[account]
+pub struct SolVault {}
+
+impl SolVault {
+    pub const SPACE: usize = 8;
+}

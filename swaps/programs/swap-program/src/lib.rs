@@ -1,7 +1,8 @@
 use anchor_lang::{
     prelude::*, 
     solana_program::clock, 
-    solana_program::sysvar::instructions::ID as IX_ID
+    solana_program::sysvar::instructions::ID as IX_ID,
+    system_program
 };
 use anchor_spl::token::{
     self, /*CloseAccount, */ Mint, Token,
@@ -24,7 +25,7 @@ mod structs;
 mod utils;
 mod ixs;
 
-declare_id!("4hfUykhqmD7ZRvNh1HuzVKEY7ToENixtdUKZspNDCrEM");
+declare_id!("8YiqJKjuS7zKPYoxdMFsfPpavPYCnu13Yx1CFqgV6o43");
 
 pub fn now_ts() -> Result<u64> {
     Ok(clock::Clock::get().unwrap().unix_timestamp.try_into().unwrap())
@@ -58,6 +59,22 @@ pub mod swap_program {
         Ok(())
     }
 
+    //Deposit to program balance
+    pub fn deposit_sol(
+        ctx: Context<DepositSol>,
+        amount: u64,
+    ) -> Result<()> {
+        system_program::transfer(
+            ctx.accounts.get_transfer_to_vault_context(),
+            amount,
+        )?;
+        
+        ctx.accounts.user_data.bump = ctx.bumps.user_data;
+        ctx.accounts.user_data.amount += amount;
+
+        Ok(())
+    }
+
     //Withdraw from program balance
     pub fn withdraw(
         ctx: Context<Withdraw>,
@@ -73,6 +90,19 @@ pub mod swap_program {
                 amount,
             )?;
         }
+
+        ctx.accounts.user_data.amount -= amount;
+
+        Ok(())
+    }
+
+    //Withdraw from program balance
+    pub fn withdraw_sol(
+        ctx: Context<WithdrawSol>,
+        amount: u64,
+    ) -> Result<()> {
+        **ctx.accounts.vault.to_account_info().lamports.borrow_mut() -= amount;
+        **ctx.accounts.signer.lamports.borrow_mut() += amount;
 
         ctx.accounts.user_data.amount -= amount;
 
@@ -100,7 +130,7 @@ pub mod swap_program {
             &ctx.accounts.claimer,
             &ctx.accounts.initializer.to_account_info(),
             &ctx.accounts.claimer_ata,
-            &ctx.accounts.mint,
+            Option::Some(&ctx.accounts.mint),
             &swap_data,
             txo_hash,
             auth_expiry,
@@ -111,6 +141,45 @@ pub mod swap_program {
 
         ctx.accounts.escrow_state.offerer_ata = *ctx.accounts.offerer_ata.to_account_info().key;
         token::transfer(
+            ctx.accounts.get_transfer_to_pda_context(),
+            ctx.accounts.escrow_state.data.amount,
+        )?;
+
+        Ok(())
+    }
+    
+
+    //Initialize from external source
+    pub fn offerer_initialize_pay_in_sol(
+        ctx: Context<InitializePayInSol>,
+        swap_data: SwapData,
+        security_deposit: u64,
+        claimer_bounty: u64,
+        txo_hash: [u8; 32], //Only for on-chain,
+        auth_expiry: u64
+    ) -> Result<()> {
+
+        require!(
+            swap_data.pay_in,
+            SwapErrorCode::InvalidSwapDataPayIn
+        );
+
+        ixs::initialize::process_initialize(
+            &mut ctx.accounts.escrow_state,
+            &ctx.accounts.offerer.to_account_info(),
+            &ctx.accounts.claimer,
+            &ctx.accounts.initializer.to_account_info(),
+            &Option::None,
+            Option::None,
+            &swap_data,
+            txo_hash,
+            auth_expiry,
+            security_deposit,
+            claimer_bounty,
+            &ctx.accounts.system_program
+        )?;
+
+        system_program::transfer(
             ctx.accounts.get_transfer_to_pda_context(),
             ctx.accounts.escrow_state.data.amount,
         )?;
@@ -145,7 +214,48 @@ pub mod swap_program {
             &ctx.accounts.claimer,
             &ctx.accounts.initializer.to_account_info(),
             &ctx.accounts.claimer_ata,
-            &ctx.accounts.mint,
+            Option::Some(&ctx.accounts.mint),
+            &swap_data,
+            txo_hash,
+            auth_expiry,
+            security_deposit,
+            claimer_bounty,
+            &ctx.accounts.system_program
+        )?;
+
+        ctx.accounts.offerer_user_data.amount -= swap_data.amount;
+
+        Ok(())
+    }
+
+    //Initialize from internal program balance.
+    //Signer (claimer), must also deposit a required security_deposit,
+    // in case he doesn't claim the swap in time and offerer has to refund,
+    // offerer will get this deposit as a compensation for the time value
+    // of funds locked up in a contract
+    //Signer (claimer), may also deposit a claimer_bounty, to incentivize
+    // watchtowers to claim this contract (only SwapType::Chain* swaps)
+    pub fn offerer_initialize_sol(
+        ctx: Context<InitializeSol>,
+        swap_data: SwapData,
+        security_deposit: u64,
+        claimer_bounty: u64,
+        txo_hash: [u8; 32], //Only for on-chain
+        auth_expiry: u64
+    ) -> Result<()> {
+
+        require!(
+            !swap_data.pay_in,
+            SwapErrorCode::InvalidSwapDataPayIn
+        );
+
+        ixs::initialize::process_initialize(
+            &mut ctx.accounts.escrow_state,
+            &ctx.accounts.offerer.to_account_info(),
+            &ctx.accounts.claimer,
+            &ctx.accounts.initializer.to_account_info(),
+            &Option::None,
+            Option::None,
             &swap_data,
             txo_hash,
             auth_expiry,
@@ -191,6 +301,20 @@ pub mod swap_program {
 
         Ok(())
     }
+    
+    //Refund back to offerer once enough time has passed,
+    // or by providing a "refund" message signed by claimer
+    pub fn offerer_refund_pay_in_sol(ctx: Context<RefundPayInSol>, auth_expiry: u64) -> Result<()> {
+        let is_cooperative = ixs::refund::process_refund(auth_expiry, &ctx.accounts.escrow_state, &ctx.accounts.ix_sysvar, &mut ctx.accounts.claimer_user_data)?;
+
+        //Refund in token to external wallet
+        **ctx.accounts.vault.to_account_info().lamports.borrow_mut() -= ctx.accounts.escrow_state.data.amount;
+        **ctx.accounts.offerer.lamports.borrow_mut() += ctx.accounts.escrow_state.data.amount;
+
+        ixs::refund::pay_security_deposit(&mut ctx.accounts.escrow_state, &mut ctx.accounts.offerer, &mut ctx.accounts.claimer, is_cooperative)?;
+
+        Ok(())
+    }
 
     //Claim the swap using the "secret", or data in the provided "data" account
     pub fn claimer_claim(ctx: Context<Claim>, secret: Vec<u8>) -> Result<()> {
@@ -218,6 +342,18 @@ pub mod swap_program {
                 .with_signer(&[&vault_seeds[..]]),
             ctx.accounts.escrow_state.data.amount,
         )?;
+
+        ixs::claim::pay_claimer_bounty(&ctx.accounts.signer, &ctx.accounts.offerer, &ctx.accounts.claimer, &ctx.accounts.escrow_state)?;
+
+        Ok(())
+    }
+    
+    //Claim the swap using the "secret", or data in the provided "data" account
+    pub fn claimer_claim_pay_out_sol(ctx: Context<ClaimPayOutSol>, secret: Vec<u8>) -> Result<()> {
+        ixs::claim::process_claim(&ctx.accounts.signer, &ctx.accounts.escrow_state.data, &ctx.accounts.ix_sysvar, &mut ctx.accounts.data, &secret)?;
+
+        **ctx.accounts.vault.to_account_info().lamports.borrow_mut() -= ctx.accounts.escrow_state.data.amount;
+        **ctx.accounts.claimer.lamports.borrow_mut() += ctx.accounts.escrow_state.data.amount;
 
         ixs::claim::pay_claimer_bounty(&ctx.accounts.signer, &ctx.accounts.offerer, &ctx.accounts.claimer, &ctx.accounts.escrow_state)?;
 
