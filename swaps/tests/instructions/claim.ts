@@ -127,7 +127,9 @@ export async function getClaimDefaultData(
         txIndex: number,
         reversedMerkleProof: number[][],
         committedHeader: CommittedHeader
-    }
+    },
+    securityDeposit?: BN,
+    claimerBounty?: BN
 ): Promise<ClaimIXDataPayOut | ClaimIXDataNotPayOut> {
 
     const confirmations = btcRelayVerify!=null ? btcRelayVerify.confirmations : 6;
@@ -227,7 +229,9 @@ export async function getClaimDefaultData(
         }
     }
 
-    const escrowStateData = await getInitializedEscrowState(payIn, payOut, kind, undefined, hash, undefined, confirmations, swapNonce, undefined, undefined, undefined, undefined, offererInitializer);
+    const escrowStateData = await getInitializedEscrowState(
+        payIn, payOut, kind, undefined, hash, undefined, confirmations, swapNonce, undefined, undefined, securityDeposit, claimerBounty, offererInitializer
+    );
 
     const params: ClaimIXParams = {
         secret: claimWithAccount ? null : [...secret]
@@ -710,15 +714,22 @@ function runTestsWith(payIn: boolean, payOut: boolean, kind: SwapType, claimWith
 
     const claimExecute: (data: ClaimIXData) => Promise<{result: SignatureResult, signature: string, signerPreBalance: number, error: CombinedProgramErrorType}> = payOut ? claimExecutePayOut : claimExecuteNotPayOut;
 
-    parallelTest.it(prefix+"Initialize and claim", async () => {
-        const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer);
+    const initializeAndClaim = (securityDeposit?: BN, claimerBounty?: BN) => {
+        return async () => {
+            const data = await getClaimDefaultData(payIn, payOut, kind, claimWithAccount, offererInitializer, undefined, undefined, undefined, undefined, securityDeposit, claimerBounty);
 
-        const initialState = await saveClaimInitialState(data);
+            const initialState = await saveClaimInitialState(data);
 
-        const {result, signature, signerPreBalance} = await claimExecute(data);
+            const {result, signature, signerPreBalance} = await claimExecute(data);
 
-        await verifyClaimInvariants(data, initialState, result, signature, signerPreBalance, offererInitializer);
-    });
+            await verifyClaimInvariants(data, initialState, result, signature, signerPreBalance, offererInitializer);
+        };
+    }
+
+    parallelTest.it(prefix+"Initialize and claim", initializeAndClaim());
+    parallelTest.it(prefix+"Initialize and claim: deposit exceeds rent exempt lamports, securityDeposit > claimerBounty", initializeAndClaim(new BN(50_000_000), new BN(40_000_000)));
+    parallelTest.it(prefix+"Initialize and claim: deposit exceeds rent exempt lamports, securityDeposit < claimerBounty", initializeAndClaim(new BN(40_000_000), new BN(50_000_000)));
+    parallelTest.it(prefix+"Initialize and claim: deposit exceeds rent exempt lamports, securityDeposit == claimerBounty", initializeAndClaim(new BN(50_000_000), new BN(50_000_000)));
 
     if(kind==="htlc") {
         parallelTest.it(prefix+"HTLC claim with right padded gibberish", async () => {

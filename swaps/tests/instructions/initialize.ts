@@ -39,9 +39,18 @@ function runCommonTest(
         confirmations?: number, 
         nonce?: BN,
         sequence?: BN,
-        txoHash?: Buffer
+        txoHash?: Buffer,
+        securityDeposit?: BN,
+        claimerBounty?: BN
     ) => Promise<InitializeIXData>
 ) {
+    parallelTest.it(prefix+"payOut=true: Uninitialized claimerAta", async () => {
+        const data = await getDefaultInitializeData(true, true);
+
+        const {result, signature, error} = await execute(data);
+
+        assert(error==null, "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
+    });
 
     parallelTest.it(prefix+"Initialize with wrong payIn", async () => {
         const data = await getDefaultInitializeData(true);
@@ -138,25 +147,6 @@ function runCommonTest(
         assert(error==="InvalidSwapDataNonce", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
     });
 
-    // parallelTest.it(prefix+"payOut=true: Uninitialized claimerAta", async () => {
-    //     const data = await getDefaultInitializeData(true, true);
-
-    //     const {result, signature, error} = await execute(data);
-
-    //     assert(error==="AccountNotInitialized", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
-    // });
-
-    // parallelTest.it(prefix+"payOut=true: claimerAta of other mint", async () => {
-    //     const data = await getDefaultInitializeData(true, true);
-
-    //     const otherMint = await getNewMint();
-    //     data.accounts.claimerAta = await otherMint.mintTo(data.accounts.claimer.publicKey, escrowAmount);
-
-    //     const {result, signature, error} = await execute(data);
-
-    //     assert(error==="ConstraintTokenMint", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
-    // });
-
     parallelTest.it(prefix+"payOut=false: Uninitialized claimerUserData", async () => {
         const data = await getDefaultInitializeData(false, true);
 
@@ -208,6 +198,81 @@ function runCommonTest(
 
         assert(error==="ConstraintRaw", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
     });
+
+    const runDepositTests = (offererInitializer: boolean) => {
+        parallelTest.it(prefix+"Deposits above escrow state rent exempt amount, securityDeposit > claimerBounty, offererInitializer: "+offererInitializer, async () => {
+            const data = await getDefaultInitializeData(
+                false, undefined, undefined, offererInitializer, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+                new BN(50_000_000), //Ensure this is larger than the escrow state rent exempt amount
+                new BN(40_000_000), // claimer bounty is below the security deposit
+            );
+
+            const initializerPreBalance = await provider.connection.getBalance(data.accounts.initializer.publicKey);
+            const escrowPreBalance = await provider.connection.getBalance(data.accounts.escrowState);
+
+            const {result, signature, error} = await execute(data);
+
+            const initializerPostBalance = await provider.connection.getBalance(data.accounts.initializer.publicKey);
+            const escrowPostBalance = await provider.connection.getBalance(data.accounts.escrowState);
+
+            const tx = await getTxWithRetries(provider, signature);
+
+            const expectedDepositAndFees = tx.meta.fee + 50_000_000;
+
+            assert(initializerPreBalance-expectedDepositAndFees===initializerPostBalance, `Invalid initializer balance, pre-balance: ${initializerPreBalance}, post-balance: ${initializerPostBalance}, expected difference: ${expectedDepositAndFees}`);
+            assert(escrowPreBalance+50_000_000===escrowPostBalance, `Invalid escrow balance, pre-balance: ${escrowPreBalance}, post-balance: ${escrowPostBalance}, expected difference: ${50_000_000}`);
+        });
+
+        parallelTest.it(prefix+"Deposits above escrow state rent exempt amount, securityDeposit < claimerBounty, offererInitializer: "+offererInitializer, async () => {
+            const data = await getDefaultInitializeData(
+                false, undefined, undefined, offererInitializer, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+                new BN(40_000_000), //Ensure this is larger than the escrow state rent exempt amount
+                new BN(50_000_000), // claimer bounty is above the security deposit
+            );
+
+            const initializerPreBalance = await provider.connection.getBalance(data.accounts.initializer.publicKey);
+            const escrowPreBalance = await provider.connection.getBalance(data.accounts.escrowState);
+
+            const {result, signature, error} = await execute(data);
+
+            const initializerPostBalance = await provider.connection.getBalance(data.accounts.initializer.publicKey);
+            const escrowPostBalance = await provider.connection.getBalance(data.accounts.escrowState);
+
+            const tx = await getTxWithRetries(provider, signature);
+
+            const expectedDepositAndFees = tx.meta.fee + 50_000_000;
+
+            assert(initializerPreBalance-expectedDepositAndFees===initializerPostBalance, `Invalid initializer balance, pre-balance: ${initializerPreBalance}, post-balance: ${initializerPostBalance}, expected difference: ${expectedDepositAndFees}`);
+            assert(escrowPreBalance+50_000_000===escrowPostBalance, `Invalid escrow balance, pre-balance: ${escrowPreBalance}, post-balance: ${escrowPostBalance}, expected difference: ${50_000_000}`);
+        });
+
+        parallelTest.it(prefix+"Deposits above escrow state rent exempt amount, securityDeposit == claimerBounty, offererInitializer: "+offererInitializer, async () => {
+            const data = await getDefaultInitializeData(
+                false, undefined, undefined, offererInitializer, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+                new BN(50_000_000), //Ensure this is larger than the escrow state rent exempt amount
+                new BN(50_000_000), // claimer bounty is exactly the same as security deposit
+            );
+
+            const initializerPreBalance = await provider.connection.getBalance(data.accounts.initializer.publicKey);
+            const escrowPreBalance = await provider.connection.getBalance(data.accounts.escrowState);
+
+            const {result, signature, error} = await execute(data);
+
+            const initializerPostBalance = await provider.connection.getBalance(data.accounts.initializer.publicKey);
+            const escrowPostBalance = await provider.connection.getBalance(data.accounts.escrowState);
+
+            const tx = await getTxWithRetries(provider, signature);
+
+            const expectedDepositAndFees = tx.meta.fee + 50_000_000;
+
+            assert(initializerPreBalance-expectedDepositAndFees===initializerPostBalance, `Invalid initializer balance, pre-balance: ${initializerPreBalance}, post-balance: ${initializerPostBalance}, expected difference: ${expectedDepositAndFees}`);
+            assert(escrowPreBalance+50_000_000===escrowPostBalance, `Invalid escrow balance, pre-balance: ${escrowPreBalance}, post-balance: ${escrowPostBalance}, expected difference: ${50_000_000}`);
+        });
+    };
+
+    runDepositTests(true);
+    runDepositTests(false);
+
 }
 
 describe("swap-program: Initialize", () => {

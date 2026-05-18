@@ -307,8 +307,10 @@ function runTestsWith(payIn: boolean, payOut: boolean, offererInitializer: boole
     }
     const refundExecute: (data: RefundIXData, thirdPartySigner?: boolean) => Promise<{result: SignatureResult, signature: string, error: CombinedProgramErrorType}> = payIn ? refundExecutePayIn : refundExecuteNotPayIn;
 
-    const successfulRefund = (thirdPartySigner: boolean) => async () => {
-        const escrowStateData = await getInitializedEscrowState();
+    const successfulRefund = (thirdPartySigner: boolean, securityDeposit?: BN, claimerBounty?: BN) => async () => {
+        const escrowStateData = await getInitializedEscrowState(
+            undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, securityDeposit, claimerBounty
+        );
         const data = await getRefundDefaultData(escrowStateData);
         
         const initialOffererLamports = await provider.connection.getBalance(data.accounts.offerer.publicKey);
@@ -419,7 +421,13 @@ function runTestsWith(payIn: boolean, payOut: boolean, offererInitializer: boole
     };
 
     parallelTest.it(prefix+"Success refund", successfulRefund(false));
+    parallelTest.it(prefix+"Success refund: deposit exceeds rent exempt lamports, securityDeposit > claimerBounty", successfulRefund(false, new BN(50_000_000), new BN(40_000_000)));
+    parallelTest.it(prefix+"Success refund: deposit exceeds rent exempt lamports, securityDeposit < claimerBounty", successfulRefund(false, new BN(40_000_000), new BN(50_000_000)));
+    parallelTest.it(prefix+"Success refund: deposit exceeds rent exempt lamports, securityDeposit == claimerBounty", successfulRefund(false, new BN(50_000_000), new BN(50_000_000)));
     parallelTest.it(prefix+"Success refund (3rd party signer)", successfulRefund(true));
+    parallelTest.it(prefix+"Success refund (3rd party signer): deposit exceeds rent exempt lamports, securityDeposit > claimerBounty", successfulRefund(true, new BN(50_000_000), new BN(40_000_000)));
+    parallelTest.it(prefix+"Success refund (3rd party signer): deposit exceeds rent exempt lamports, securityDeposit < claimerBounty", successfulRefund(true, new BN(40_000_000), new BN(50_000_000)));
+    parallelTest.it(prefix+"Success refund (3rd party signer): deposit exceeds rent exempt lamports, securityDeposit == claimerBounty", successfulRefund(true, new BN(50_000_000), new BN(50_000_000)));
 
     parallelTest.it(prefix+"Wrong offerer", async () => {
         const escrowStateData = await getInitializedEscrowState();
