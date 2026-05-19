@@ -154,13 +154,13 @@ function main() {
 
   const clusterMoniker = envName==="mainnet" ? "mainnet-beta" : "devnet";
 
-  console.log(`\nDeploy with:\nsolana program deploy -u ${cluster} -k ${config.provider.wallet} target/deploy/btc_relay.so --program-id target/deploy/btc_relay-keypair.json`);
+  console.log(`\nDeploy with:\nsolana program deploy -u ${clusterMoniker} -k ${config.provider.wallet} target/deploy/btc_relay.so --program-id target/deploy/btc_relay-keypair.json`);
 
   const gitCommitHash = execFileSync("git", ["rev-parse", "HEAD"]).toString().replace(/(\r\n|\n|\r)/gm, "");
 
-  console.log(`\nVerify with:\nsolana-verify verify-from-repo -u ${cluster} -k ${config.provider.wallet} --program-id ${selectedKeypair.publicKey.toString()} https://github.com/atomiqlabs/atomiq-contracts-solana --commit-hash ${gitCommitHash} --library-name btc_relay --mount-path btcrelay`+(features.length===0 ? "" : " "+features.join(" ")));
+  console.log(`\nVerify with:\nsolana-verify verify-from-repo -u ${clusterMoniker} -k ${config.provider.wallet} --program-id ${selectedKeypair.publicKey.toString()} https://github.com/atomiqlabs/atomiq-contracts-solana --commit-hash ${gitCommitHash} --library-name btc_relay --mount-path btcrelay`+(features.length===0 ? "" : " "+features.join(" ")));
 
-  console.log(`\nSubmit with:\nsolana-verify remote submit-job -u ${cluster} --program-id ${selectedKeypair.publicKey.toString()} --uploader $(solana address -k ${config.provider.wallet})`);
+  console.log(`\nSubmit with:\nsolana-verify remote submit-job -u ${clusterMoniker} --program-id ${selectedKeypair.publicKey.toString()} --uploader $(solana address -k ${config.provider.wallet})`);
 
 }
 

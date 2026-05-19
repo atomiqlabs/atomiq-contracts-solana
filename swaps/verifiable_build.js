@@ -156,16 +156,16 @@ function main() {
   const features = ["--", "--features", envName];
 
   run("solana-verify", ["build", "--library-name", PROGRAM_NAME].concat(features));
-  
+
   const clusterMoniker = envName==="mainnet" ? "mainnet-beta" : "devnet";
 
-  console.log(`\nDeploy with:\nsolana program deploy -u ${cluster} -k ${config.provider.wallet} target/deploy/swap_program.so --program-id target/deploy/swap_program-keypair.json`);
+  console.log(`\nDeploy with:\nsolana program deploy -u ${clusterMoniker} -k ${config.provider.wallet} target/deploy/swap_program.so --program-id target/deploy/swap_program-keypair.json`);
 
   const gitCommitHash = execFileSync("git", ["rev-parse", "HEAD"]).toString().replace(/(\r\n|\n|\r)/gm, "");
 
-  console.log(`\nVerify with:\nsolana-verify verify-from-repo -u ${cluster} -k ${config.provider.wallet} --program-id ${selectedKeypair.publicKey.toString()} https://github.com/atomiqlabs/atomiq-contracts-solana --commit-hash ${gitCommitHash} --library-name swap_program --mount-path swaps ${features.join(" ")}`);
+  console.log(`\nVerify with:\nsolana-verify verify-from-repo -u ${clusterMoniker} -k ${config.provider.wallet} --program-id ${selectedKeypair.publicKey.toString()} https://github.com/atomiqlabs/atomiq-contracts-solana --commit-hash ${gitCommitHash} --library-name swap_program --mount-path swaps ${features.join(" ")}`);
 
-  console.log(`\nSubmit with:\nsolana-verify remote submit-job -u ${cluster} --program-id ${selectedKeypair.publicKey.toString()} --uploader $(solana address -k ${config.provider.wallet})`);
+  console.log(`\nSubmit with:\nsolana-verify remote submit-job -u ${clusterMoniker} --program-id ${selectedKeypair.publicKey.toString()} --uploader $(solana address -k ${config.provider.wallet})`);
 }
 
 try {
