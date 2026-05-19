@@ -152,7 +152,7 @@ function main() {
 
   run("solana-verify", ["build", "--library-name", PROGRAM_NAME].concat(features));
 
-  const cluster = envName==="mainnet" ? "mainnet" : "devnet";
+  const clusterMoniker = envName==="mainnet" ? "mainnet-beta" : "devnet";
 
   console.log(`\nDeploy with:\nsolana program deploy -u ${cluster} -k ${config.provider.wallet} target/deploy/btc_relay.so --program-id target/deploy/btc_relay-keypair.json`);
 
