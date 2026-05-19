@@ -1,14 +1,18 @@
+[toolchain]
+anchor_version = "0.29.0"
+solana_version = "1.17.13"
+
 [features]
 seeds = false
 
 [programs.mainnet]
-swap_program = "4hfUykhqmD7ZRvNh1HuzVKEY7ToENixtdUKZspNDCrEM"
+swap_program = "8YiqJKjuS7zKPYoxdMFsfPpavPYCnu13Yx1CFqgV6o43"
 
 [programs.localnet]
-swap_program = "4hfUykhqmD7ZRvNh1HuzVKEY7ToENixtdUKZspNDCrEM"
+swap_program = "8YiqJKjuS7zKPYoxdMFsfPpavPYCnu13Yx1CFqgV6o43"
 
 [programs.devnet]
-swap_program = "4hfUykhqmD7ZRvNh1HuzVKEY7ToENixtdUKZspNDCrEM"
+swap_program = "8YiqJKjuS7zKPYoxdMFsfPpavPYCnu13Yx1CFqgV6o43"
 
 [registry]
 url = "https://anchor.projectserum.com"
