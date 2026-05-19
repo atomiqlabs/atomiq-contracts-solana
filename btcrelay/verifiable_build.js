@@ -117,6 +117,8 @@ function updateAnchorToml(programId) {
   for (const cluster of CLUSTERS) {
     console.log(`  [programs.${cluster}] ${PROGRAM_NAME} = "${programId}"`);
   }
+
+  return config;
 }
 
 function main() {
@@ -144,7 +146,7 @@ function main() {
   fs.copyFileSync("_Anchor.toml", "Anchor.toml");
   fs.rmSync("_Anchor.toml");
 
-  updateAnchorToml(selectedProgramId);
+  const config = updateAnchorToml(selectedProgramId);
 
   const features = envName==="mainnet" ? [] : ["--", "--features", "bitcoin_testnet"];
 
@@ -152,11 +154,14 @@ function main() {
 
   const cluster = envName==="mainnet" ? "mainnet" : "devnet";
 
-  console.log(`\nDeploy with:\nsolana program deploy -u ${cluster} target/deploy/btc_relay.so --program-id target/deploy/btc_relay-keypair.json`);
+  console.log(`\nDeploy with:\nsolana program deploy -u ${cluster} -k ${config.provider.wallet} target/deploy/btc_relay.so --program-id target/deploy/btc_relay-keypair.json`);
 
   const gitCommitHash = execFileSync("git", ["rev-parse", "HEAD"]).toString().replace(/(\r\n|\n|\r)/gm, "");
 
-  console.log(`\nVerify with:\nsolana-verify verify-from-repo -u ${cluster} --program-id target/deploy/btc_relay-keypair.json https://github.com/atomiqlabs/atomiq-contracts-solana --commit-hash ${gitCommitHash} --library-name btc_relay --mount-path btcrelay`+(features.length===0 ? "" : " "+features.join(" ")));
+  console.log(`\nVerify with:\nsolana-verify verify-from-repo -u ${cluster} -k ${config.provider.wallet} --program-id ${selectedKeypair.publicKey.toString()} https://github.com/atomiqlabs/atomiq-contracts-solana --commit-hash ${gitCommitHash} --library-name btc_relay --mount-path btcrelay`+(features.length===0 ? "" : " "+features.join(" ")));
+
+  console.log(`\nSubmit with:\nsolana-verify remote submit-job -u ${cluster} --program-id ${selectedKeypair.publicKey.toString()} --uploader $(solana address -k ${config.provider.wallet})`);
+
 }
 
 try {
