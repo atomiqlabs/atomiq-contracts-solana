@@ -182,10 +182,11 @@ pub mod btc_relay {
             //Compute commit hash
             block_commit_hash = last_commited_header.get_commit_hash()?;
 
-            //Store and emit
+            //Store
             main_state.store_block_commitment(block_height, block_commit_hash);
-            emit!(StoreFork {
-                fork_id,
+
+            //Emit event - here we can already emit main chain submission events
+            emit!(StoreHeader {
                 block_hash: last_block_hash,
                 commit_hash: block_commit_hash,
                 header: last_commited_header
