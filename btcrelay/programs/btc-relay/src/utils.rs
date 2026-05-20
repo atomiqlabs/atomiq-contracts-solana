@@ -212,7 +212,9 @@ pub fn get_difficulty(target: [u8; 32]) -> [u8; 32] {
 // new_difficulty_target = prev_difficulty_target * (timespan / target_timespan)
 pub fn compute_new_nbits(prev_time: u32, start_time: u32, prev_target: &mut [u8; 32]) -> u32 {
 
-    let mut time_span = prev_time - start_time;
+    //Use saturating sub here, to also cover edge cases where start_time > prev_time, which anyway has
+    // no way of happening, but just to be sure and in-line with bitcoin core implementation
+    let mut time_span = prev_time.saturating_sub(start_time);
 
     //Difficulty increase/decrease multiples are clamped between 0.25 (-75%) and 4 (+300%)
     if time_span < TARGET_TIMESPAN_DIV_4 {
