@@ -34,6 +34,12 @@ A party might start submitting valid bitcoin blockheaders to the bitcoin relay a
 - if there are no honest parties, the cost of faking 1 blockheader can be expressed as value of lost bitcoin block reward incurred due to not submitting the blockheader to the main chain, which is currently 6.25 BTC ~ 140k usd
 - if there is at least 1 honest party, the adversary party needs to capture at least 51% of the bitcoin hashing power to overrun the honest chain submitted by honest party
 
+## Known limitations
+
+The relay stores only the last `X` block headers in a ring buffer. As a result, after a valid reorg to a chain with a lower tip height than the previous canonical chain, the effective verification window may temporarily cover fewer than `X` blocks of the new canonical chain. Headers that were already pruned before the reorg cannot be recovered.
+
+For example, if the canonical tip moves back by 10 blocks during a reorg, then up to 10 blocks of the nominal `X`-block lookback window may no longer be available for verification.
+
 ## Building
 
 Use the Node.JS build script which properly manages different keys for various bitcoin environments:
