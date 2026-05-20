@@ -12,7 +12,7 @@ mod errors;
 mod structs;
 mod state;
 
-declare_id!("HKKJKW1jWh3DZptNSABZ4iKUvjxYvic4tb3qnqNvBZoF");
+declare_id!("btc2WHkrjoZU9xzFJupDCmMaUTRHyYTzJE25LvEi9Ls");
 
 #[program]
 pub mod btc_relay {

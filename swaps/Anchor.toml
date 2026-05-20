@@ -6,13 +6,13 @@ solana_version = "1.17.13"
 seeds = false
 
 [programs.mainnet]
-swap_program = "8YiqJKjuS7zKPYoxdMFsfPpavPYCnu13Yx1CFqgV6o43"
+swap_program = "atq2FYuvww5EF6qeB28gj9tkao6Ld9mEGUzF4M93cCC"
 
 [programs.localnet]
-swap_program = "8YiqJKjuS7zKPYoxdMFsfPpavPYCnu13Yx1CFqgV6o43"
+swap_program = "atq2FYuvww5EF6qeB28gj9tkao6Ld9mEGUzF4M93cCC"
 
 [programs.devnet]
-swap_program = "8YiqJKjuS7zKPYoxdMFsfPpavPYCnu13Yx1CFqgV6o43"
+swap_program = "atq2FYuvww5EF6qeB28gj9tkao6Ld9mEGUzF4M93cCC"
 
 [registry]
 url = "https://anchor.projectserum.com"

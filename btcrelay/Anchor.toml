@@ -7,13 +7,13 @@ seeds = false
 skip-lint = false
 
 [programs.devnet]
-btc_relay = "HKKJKW1jWh3DZptNSABZ4iKUvjxYvic4tb3qnqNvBZoF"
+btc_relay = "btc2WHkrjoZU9xzFJupDCmMaUTRHyYTzJE25LvEi9Ls"
 
 [programs.localnet]
-btc_relay = "HKKJKW1jWh3DZptNSABZ4iKUvjxYvic4tb3qnqNvBZoF"
+btc_relay = "btc2WHkrjoZU9xzFJupDCmMaUTRHyYTzJE25LvEi9Ls"
 
 [programs.mainnet]
-btc_relay = "HKKJKW1jWh3DZptNSABZ4iKUvjxYvic4tb3qnqNvBZoF"
+btc_relay = "btc2WHkrjoZU9xzFJupDCmMaUTRHyYTzJE25LvEi9Ls"
 
 [registry]
 url = "https://api.apr.dev"
