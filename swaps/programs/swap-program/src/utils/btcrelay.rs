@@ -5,7 +5,16 @@ use anchor_lang::{
 use std::str::FromStr;
 use crate::SwapErrorCode;
 
+#[cfg(feature = "mainnet")]
+const BTC_RELAY_ID_BASE58: &str = "btc2WHkrjoZU9xzFJupDCmMaUTRHyYTzJE25LvEi9Ls";
+#[cfg(feature = "testnet3")]
+const BTC_RELAY_ID_BASE58: &str = "btc2WHkrjoZU9xzFJupDCmMaUTRHyYTzJE25LvEi9Ls";
+#[cfg(feature = "testnet4")]
+const BTC_RELAY_ID_BASE58: &str = "HKKJKW1jWh3DZptNSABZ4iKUvjxYvic4tb3qnqNvBZoF";
+
+#[cfg(not(any(feature = "mainnet", feature = "testnet3", feature = "testnet4")))]
 const BTC_RELAY_ID_BASE58: &str = env!("BTC_RELAY_ADDRESS");
+
 const TX_VERIFY_IX_PREFIX: [u8; 8] = [
     0x9d,
     0x7e,
