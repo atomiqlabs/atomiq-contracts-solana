@@ -33,5 +33,7 @@ pub enum RelayErrorCode {
     #[msg("Didn't pass enough remaining accounts!")]
     InvalidRemainingAccounts,
     #[msg("Fork root block not in main-chain!")]
-    ForkRootBlockNotInMainChain
+    ForkRootBlockNotInMainChain,
+    #[msg("Previous block commitment at a blockheight not tracked by the relay.")]
+    UnknownBlockheight
 }

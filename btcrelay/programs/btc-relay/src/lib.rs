@@ -149,9 +149,15 @@ pub mod btc_relay {
         let commit_hash = commited_header.get_commit_hash()?;
 
         let main_state = &mut ctx.accounts.main_state.load_mut()?;
+        let main_state_commit_hash = main_state.get_commitment(commited_header.blockheight);
 
         require!(
-            commit_hash == main_state.get_commitment(commited_header.blockheight),
+            main_state_commit_hash != [0; 32],
+            RelayErrorCode::UnknownBlockheight
+        );
+
+        require!(
+            commit_hash == main_state_commit_hash,
             RelayErrorCode::PrevBlockCommitment
         );
 
@@ -266,10 +272,16 @@ pub mod btc_relay {
 
                 main_state.fork_counter = fork_id+1;
 
+                let main_state_commitment = main_state.get_commitment(commited_header.blockheight);
+                require!(
+                    main_state_commitment != [0; 32],
+                    RelayErrorCode::UnknownBlockheight
+                );
+
                 //Verify commited header was indeed committed,
                 // the latest common ancestor block, right before the fork occurred
                 require!(
-                    commit_hash == main_state.get_commitment(commited_header.blockheight),
+                    commit_hash == main_state_commitment,
                     RelayErrorCode::PrevBlockCommitment
                 );
 
@@ -319,9 +331,15 @@ pub mod btc_relay {
 
                 let start_height = fork_state.start_height;
 
+                let main_state_start_commitment = main_state.get_commitment(start_height);
+                require!(
+                    main_state_start_commitment != [0; 32],
+                    RelayErrorCode::UnknownBlockheight
+                );
+
                 //Verify that the fork's root block is still committed in the main chain
                 require!(
-                    fork_state.block_commitments[0] == main_state.get_commitment(start_height),
+                    fork_state.block_commitments[0] == main_state_start_commitment,
                     RelayErrorCode::ForkRootBlockNotInMainChain
                 );
 
@@ -381,13 +399,21 @@ pub mod btc_relay {
             let main_state = ctx.accounts.main_state.load()?;
 
             require!(
-                main_state.block_height - block_height + 1 >= confirmations,
+                //Equivalent to main_state.block_height - block_height + 1 >= confirmations
+                main_state.block_height + 1 >= confirmations + block_height,
                 RelayErrorCode::BlockConfirmations
             );
 
             let commit_hash = commited_header.get_commit_hash()?;
+
+            let main_state_commit_hash = main_state.get_commitment(block_height);
             require!(
-                commit_hash == main_state.get_commitment(block_height),
+                main_state_commit_hash != [0; 32],
+                RelayErrorCode::UnknownBlockheight
+            );
+
+            require!(
+                commit_hash == main_state_commit_hash,
                 RelayErrorCode::PrevBlockCommitment
             );
 
