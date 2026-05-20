@@ -206,6 +206,14 @@ pub mod btc_relay {
         main_state.tip_block_hash = last_block_hash;
         main_state.fork_counter = fork_id+1;
 
+        //Emit chain reorg
+        emit!(ChainReorg {
+            fork_id,
+            start_height: commited_header.blockheight,
+            tip_block_hash: last_block_hash,
+            tip_commit_hash: block_commit_hash
+        });
+
         Ok(())
     }
 
