@@ -159,6 +159,10 @@ pub fn nbits_to_target(nbits: u32) -> [u8; 32] {
 //Calculates difficulty from difficulty target
 //https://en.bitcoin.it/wiki/Difficulty#How_is_difficulty_calculated.3F_What_is_the_difference_between_bdiff_and_pdiff.3F
 // difficulty = MAX_DIFFICULTY/target
+//NOTE: This outputs the difficulty, not an actual chainwork as reported by bitcoin core, the correct
+// computation should use `2**256 / (target + 1)`. However it is completely safe to use the difficulty here
+// since the added precision from using the chainwork is not required for any mainnet deployment, where the
+// difficulty itself is large enough.
 pub fn get_difficulty(target: [u8; 32]) -> [u8; 32] {
 
     //Find leading byte (first non-zero byte)

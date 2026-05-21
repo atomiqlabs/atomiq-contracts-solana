@@ -36,9 +36,15 @@ A party might start submitting valid bitcoin blockheaders to the bitcoin relay a
 
 ## Known limitations
 
+### Reorgs with heavier but shorter forks
+
 The relay stores only the last `X` block headers in a ring buffer. As a result, after a valid reorg to a chain with a lower tip height than the previous canonical chain, the effective verification window may temporarily cover fewer than `X` blocks of the new canonical chain. Headers that were already pruned before the reorg cannot be recovered.
 
 For example, if the canonical tip moves back by 10 blocks during a reorg, then up to 10 blocks of the nominal `X`-block lookback window may no longer be available for verification.
+
+### Chainwork / difficulty messup
+
+The BTC Relay computes the difficulty as `MAX_DIFFICULTY / target`, where `MAX_DIFFICULTY = 0x00000000FFFF0000000000000000000000000000000000000000000000000000` and stores it as chainwork. However the actual chainwork ([as computed by bitcoin core](https://github.com/bitcoin/bitcoin/blob/master/src/chain.cpp#L120)) uses the following formula: `2**256 / (target + 1)`. It is completely safe to use the difficulty here since the added precision from using the chainwork is not required for any mainnet deployment, where the difficulty itself is large enough. It just will be inconsistent between the BTC Relay value and value as reported by the bitcoin core nodes.
 
 ## Building
 
