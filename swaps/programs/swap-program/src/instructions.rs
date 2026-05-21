@@ -218,8 +218,8 @@ pub struct Refund<'info> {
     ////////////////////////////////////////
     //Main data
     ////////////////////////////////////////
-    #[account(mut)]
     /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
+    #[account(mut)]
     pub offerer: AccountInfo<'info>,
     /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
     #[account(mut)]
@@ -266,8 +266,8 @@ pub struct RefundPayIn<'info> {
     ////////////////////////////////////////
     //Main data
     ////////////////////////////////////////
-    #[account(mut)]
     /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
+    #[account(mut)]
     pub offerer: AccountInfo<'info>,
     /// CHECK: We are only transfering lamports to this account, we are not reading or writing data.
     #[account(mut)]
