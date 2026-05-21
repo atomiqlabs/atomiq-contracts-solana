@@ -24,7 +24,7 @@ pub fn process_initialize<'info>(
     offerer: &AccountInfo<'info>,
     claimer: &AccountInfo<'info>,
     initializer: &AccountInfo<'info>,
-    claimer_ata: &Option<AccountInfo<'info>>,
+    claimer_ata_option: &Option<AccountInfo<'info>>,
     mint: &Account<'info, Mint>,
 
     swap_data: &SwapData,
@@ -60,7 +60,7 @@ pub fn process_initialize<'info>(
     escrow_state.claimer = *claimer.to_account_info().key;
 
     if swap_data.pay_out {
-        let claimer_ata = claimer_ata.as_ref().expect("Claimer ATA not provided for pay_out=true swap");
+        let claimer_ata = claimer_ata_option.as_ref().expect("Claimer ATA not provided for pay_out=true swap");
         escrow_state.claimer_ata = *claimer_ata.key;
     }
     escrow_state.mint = *mint.to_account_info().key;
