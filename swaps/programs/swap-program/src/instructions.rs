@@ -146,6 +146,9 @@ pub struct InitializePayIn<'info> {
     ////////////////////////////////////////
     //For pay out
     ////////////////////////////////////////
+    // CHECK: Intentionally not checked to be a valid ATA of the claimer, to allow for delayed
+    //  initialization of the ATA when claiming. It is the sole responsibility of the claimer
+    //  to check that a valid `claimer_ata` is specified here when the swap is initialized
     pub claimer_ata: Option<AccountInfo<'info>>,
 }
 
@@ -204,6 +207,9 @@ pub struct Initialize<'info> {
     ////////////////////////////////////////
     //For pay out
     ////////////////////////////////////////
+    // CHECK: Intentionally not checked to be a valid ATA of the claimer, to allow for delayed
+    //  initialization of the ATA when claiming. It is the sole responsibility of the claimer
+    //  to check that a valid `claimer_ata` is specified here when the swap is initialized
     pub claimer_ata: Option<AccountInfo<'info>>
 }
 
@@ -371,6 +377,9 @@ pub struct ClaimPayOut<'info> {
     #[account(address = IX_ID)]
     pub ix_sysvar: AccountInfo<'info>,
     
+    // CHECK: The authority of the claimer ATA is not explicitly checked here, this does allow claims to an ATA that is not owned by the claimer. The claimer
+    //  is solely responsible to check that a valid `claimer_ata` is specified when the swap is created and only continue executing the swap if it verified that.
+    //  Hence an ownership check here is redundant and might actually prevent some useful use-cases (like claimer / recipient separation).
     #[account(
         mut,
         token::mint = escrow_state.mint

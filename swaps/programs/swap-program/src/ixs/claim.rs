@@ -55,6 +55,8 @@ pub fn process_claim(signer: &Signer, swap_data: &SwapData, ix_sysvar: &AccountI
 }
 
 //Verifies if the claim is claimable by the claimer, provided the secret data (tx data or preimage for HTLC), returns the preimage (for HTLC, or TXHASH for PTLC)
+//Note: Intentionally doesn't check whether the swap is already expired, this is in line with HTLC verification on Bitcoin, which also only enforces the timeout
+// on refund paths, and doesn't invalidate the claim path even after the swap is expired.
 pub fn check_claim(swap_data: &SwapData, ix_sysvar: &AccountInfo, secret: &[u8]) -> Result<[u8; 32]> {
     match swap_data.kind {
         SwapType::Htlc => check_claim_htlc(swap_data, secret),

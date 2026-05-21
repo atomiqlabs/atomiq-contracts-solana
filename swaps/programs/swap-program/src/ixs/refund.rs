@@ -17,8 +17,13 @@ fn now_ts() -> Result<u64> {
 }
 
 //Processes & checks refund (either via coop close signature, or timeout), updates reputation of the
-// claimer (if the swap was pay_out=false), emits ClaimEvent, throws on failure,
-// returns whether the refund was cooperative or not
+// claimer (if the swap was pay_out=false), emits RefundEvent, throws on failure, returns whether the
+// refund was cooperative or not
+//NOTE: Cooperative refund signatures do only hash `amount`, `expiry`, `sequence` and swap `hash` fields
+// (along with the `auth_expiry`), hence the same signature could be replayed for the swaps with the same
+// set of these parameters. The claimer, which wants to offer cooperative refunds is fully responsible
+// for ensuring that no 2 swaps do share the same `hash` AND `sequence`, this is easily achieved by
+// randomizing the `sequence` field by the claimer.
 pub fn process_refund(auth_expiry: u64, escrow_state: &Account<EscrowState>, ix_sysvar: &Option<AccountInfo>, user_data_claimer: &mut Option<Account<UserAccount>>) -> Result<bool> {
     
     let is_cooperative = auth_expiry>0;
