@@ -249,10 +249,7 @@ pub fn has_correct_difficulty_target(prev_committed_header: CommittedBlockHeader
         let mut prev_target = nbits_to_target(prev_nbits);
         let prev_time = prev_committed_header.header.timestamp;
         let start_time = prev_committed_header.last_diff_adjustment;
-        msg!("Prev target: {:x?}", prev_target);
         let new_nbits = compute_new_nbits(prev_time, start_time, &mut prev_target);
-        msg!("New computed nbits: {:x?}", new_nbits);
-        msg!("New target: {:x?}", prev_target);
         current_nbits == new_nbits
     } else {
         current_nbits == prev_nbits
