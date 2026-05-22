@@ -232,7 +232,8 @@ pub mod swap_program {
         );
 
         let mut acc_data = ctx.accounts.data.try_borrow_mut_data()?;
-        acc_data[0..32].copy_from_slice(&ctx.accounts.signer.key.to_bytes());
+        acc_data[0..8].copy_from_slice(&[0u8; 8]);
+        acc_data[8..40].copy_from_slice(&ctx.accounts.signer.key.to_bytes());
 
         Ok(())
     }
@@ -247,11 +248,18 @@ pub mod swap_program {
         //Check signer key matches
         let mut acc_data = ctx.accounts.data.try_borrow_mut_data()?;
         require!(
-            acc_data[0..32]==ctx.accounts.signer.key.to_bytes(),
+            acc_data[0..8]==[0u8; 8],
+            SwapErrorCode::InvalidDataAccount
+        );
+        require!(
+            acc_data[8..40]==ctx.accounts.signer.key.to_bytes(),
             SwapErrorCode::InvalidUserData
         );
 
-        acc_data[((start+32) as usize)..(((start+32) as usize)+data.len())].copy_from_slice(&data);
+        let start_pos = start.checked_add(40).unwrap() as usize;
+        let end_pos = start_pos.checked_add(data.len()).unwrap();
+
+        acc_data[start_pos..end_pos].copy_from_slice(&data);
 
         Ok(())
     }
@@ -266,7 +274,11 @@ pub mod swap_program {
         //Check signer key matches
         let acc_data = ctx.accounts.data.try_borrow_data()?;
         require!(
-            acc_data[0..32]==ctx.accounts.signer.key.to_bytes(),
+            acc_data[0..8]==[0u8; 8],
+            SwapErrorCode::InvalidDataAccount
+        );
+        require!(
+            acc_data[8..40]==ctx.accounts.signer.key.to_bytes(),
             SwapErrorCode::InvalidUserData
         );
 

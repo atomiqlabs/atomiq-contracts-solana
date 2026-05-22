@@ -26,11 +26,15 @@ pub fn process_claim(signer: &Signer, swap_data: &SwapData, ix_sysvar: &AccountI
             {
                 let acc_data = data_acc.try_borrow_data()?;
                 require!(
-                    acc_data[0..32]==signer.key.to_bytes(),
+                    acc_data[0..8]==[0u8; 8],
+                    SwapErrorCode::InvalidDataAccount
+                );
+                require!(
+                    acc_data[8..40]==signer.key.to_bytes(),
                     SwapErrorCode::InvalidUserData
                 );
         
-                event_secret = check_claim(swap_data, ix_sysvar, &acc_data[32..])?;
+                event_secret = check_claim(swap_data, ix_sysvar, &acc_data[40..])?;
             }
             
             let mut acc_balance = data_acc.try_borrow_mut_lamports()?;

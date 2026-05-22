@@ -301,7 +301,7 @@ export async function claimExecutePayOut(
         //Create account
         const writeData = data.dataAccount.data;
         const dataSize = writeData.length;
-        const accountSize = 32+dataSize;
+        const accountSize = 40+dataSize;
         const lamports = await provider.connection.getMinimumBalanceForRentExemption(accountSize);
         pdaReturningLamports = lamports;
 
@@ -444,7 +444,7 @@ export async function claimExecuteNotPayOut(
         //Create account
         const writeData = data.dataAccount.data;
         const dataSize = writeData.length;
-        const accountSize = 32+dataSize;
+        const accountSize = 40+dataSize;
         const lamports = await provider.connection.getMinimumBalanceForRentExemption(accountSize);
         pdaReturningLamports = lamports;
 
