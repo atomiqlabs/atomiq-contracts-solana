@@ -53,7 +53,8 @@ impl MainState {
             return [0; 32];
         }
         //Check block_height out of bounds for the ring buffer
-        if block_height<=self.block_height-PRUNING_FACTOR_U32 {
+        // same as: `block_height <= self.block_height - PRUNING_FACTOR_U32`
+        if PRUNING_FACTOR_U32 <= self.block_height - block_height {
             return [0; 32];
         }
         let pos = self.get_position(block_height);
