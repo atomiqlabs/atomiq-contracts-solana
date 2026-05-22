@@ -199,6 +199,14 @@ pub mod btc_relay {
             });
         }
 
+        //In case the fork has made the chain shorter we should also set all the
+        // "future" commitments to [0; 32]
+        if block_height < main_state.block_height {
+            for height in (block_height + 1)..=main_state.block_height {
+                main_state.store_block_commitment(height, [0; 32]);
+            }
+        }
+
         //Verify if fork chain's work exceeded main chain's work
         require!(
             arrayutils::gt_arr(last_commited_header.chain_work, main_state.chain_work),
@@ -346,6 +354,14 @@ pub mod btc_relay {
                 //Overwrite block commitments in main chain
                 for i in 1..fork_state.length {
                     main_state.store_block_commitment(start_height+i, fork_state.block_commitments[i as usize]);
+                }
+                
+                //In case the fork has made the chain shorter we should also set all the
+                // "future" commitments to [0; 32]
+                if block_height < main_state.block_height {
+                    for height in (block_height + 1)..=main_state.block_height {
+                        main_state.store_block_commitment(height, [0; 32]);
+                    }
                 }
 
                 //Update main state with fork's state
