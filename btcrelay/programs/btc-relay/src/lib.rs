@@ -400,7 +400,7 @@ pub mod btc_relay {
 
             require!(
                 //Equivalent to main_state.block_height - block_height + 1 >= confirmations
-                main_state.block_height + 1 >= confirmations + block_height,
+                main_state.block_height.checked_add(1).unwrap() >= confirmations.checked_add(block_height).unwrap(),
                 RelayErrorCode::BlockConfirmations
             );
 
