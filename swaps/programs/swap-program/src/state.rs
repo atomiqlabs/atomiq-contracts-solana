@@ -30,13 +30,13 @@ pub struct EscrowState {
 
     pub mint: Pubkey, //Pubkey of the token mint
 
-    //Bounty for the watchtower claiming the swap (only for KIND_CHAIN & KIND_CHAIN_NONCED).
-    //Alway paid as native Solana, in Lamports
+    //Bounty for the watchtower claiming the swap on behalf of the user.
+    //Alway paid as native SOL, in Lamports
     pub claimer_bounty: u64,
 
     //Security deposit, paid out to offerer in case swap expires and needs to be refunded.
     //Used to cover transaction fee and compensate for time value of money locked up in the contract.
-    //Alway paid as native Solana, in Lamports
+    //Alway paid as native SOL, in Lamports
     pub security_deposit: u64,
 
     //Whether the PDA was initiated by the offerer or claimer
