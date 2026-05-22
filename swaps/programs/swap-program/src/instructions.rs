@@ -227,6 +227,8 @@ pub struct Refund<'info> {
 
     #[account(
         mut,
+        seeds = [b"state".as_ref(), escrow_state.data.hash.as_ref()],
+        bump,
         constraint = escrow_state.offerer == *offerer.key,
         constraint = escrow_state.claimer == *claimer.key,
         constraint = !escrow_state.data.pay_in,
@@ -280,6 +282,8 @@ pub struct RefundPayIn<'info> {
 
     #[account(
         mut,
+        seeds = [b"state".as_ref(), escrow_state.data.hash.as_ref()],
+        bump,
         constraint = escrow_state.offerer == *offerer.key,
         constraint = escrow_state.claimer == *claimer.key,
         constraint = escrow_state.data.pay_in,
@@ -329,6 +333,8 @@ pub struct Claim<'info> {
 
     #[account(
         mut,
+        seeds = [b"state".as_ref(), escrow_state.data.hash.as_ref()],
+        bump,
         constraint = !escrow_state.data.pay_out,
         constraint = escrow_state.offerer == *offerer.key && escrow_state.claimer == *claimer.key,
     )]
@@ -367,6 +373,8 @@ pub struct ClaimPayOut<'info> {
 
     #[account(
         mut,
+        seeds = [b"state".as_ref(), escrow_state.data.hash.as_ref()],
+        bump,
         constraint = escrow_state.claimer_ata == claimer_ata.key(),
         constraint = escrow_state.data.pay_out,
         constraint = escrow_state.offerer == *offerer.key && escrow_state.claimer == *claimer.key,
