@@ -425,7 +425,9 @@ pub struct WriteDataAlt<'info> {
     pub signer: Signer<'info>,
 
     //Data storage account
-    /// CHECK: This is checked in the instruction logic, the signer key has to be the first 32 bytes of the account data
+    /// CHECK: This is checked in the instruction logic, the first 8 bytes have to be all set to 0, such
+    ///  that the account has no way to collide with existing anchor discriminators, signer key has to
+    ///  be the next 32 bytes (8..40) of the account data
     #[account(mut)]
     pub data: UncheckedAccount<'info>
 }
@@ -436,7 +438,9 @@ pub struct CloseDataAlt<'info> {
     pub signer: Signer<'info>,
 
     //Data storage account
-    /// CHECK: This is checked in the instruction logic, the signer key has to be the first 32 bytes of the account data
+    /// CHECK: This is checked in the instruction logic, the first 8 bytes have to be all set to 0, such
+    ///  that the account has no way to collide with existing anchor discriminators, signer key has to
+    ///  be the next 32 bytes (8..40) of the account data
     #[account(mut)]
     pub data: UncheckedAccount<'info>
 }

@@ -13,7 +13,6 @@
 //UserAccount of other mint
 //UserAccount of other signer & mint
 //Bad mint vault
-//Wrong vault authority
 
 
 //Withdraw
@@ -27,7 +26,6 @@
 //UserAccount of other mint
 //UserAccount of other signer & mint
 //Bad mint vault
-//Wrong vault authority
 
 
 //InitializePayIn
@@ -55,7 +53,6 @@
 //offerer ATA for other mint
 //offerer ATA with not enough funds
 //Bad mint vault
-//Wrong vault authority
 
 
 //Initialize
@@ -159,7 +156,6 @@
 //offerer_ata for other mint
 //Wrong offerer_ata (not the one specified in escrow_state)
 //Bad mint vault
-//Wrong vault authority
 
 
 //Claim
@@ -256,4 +252,3 @@
 //Uninitialized claimer_ata
 //claimer_ata for other mint
 //Bad mint vault
-//Wrong vault authority
