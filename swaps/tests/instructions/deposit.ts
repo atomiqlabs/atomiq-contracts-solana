@@ -3,7 +3,7 @@ import { AnchorProvider, Program, workspace } from "@coral-xyz/anchor";
 import { SwapProgram } from "../../target/types/swap_program";
 import { BN } from "bn.js";
 import { TokenMint, getNewMint } from "../utils/tokens";
-import { RandomPDA, SwapUserVault, SwapVault, SwapVaultAuthority } from "../utils/accounts";
+import { RandomPDA, SwapUserVault, SwapVault } from "../utils/accounts";
 import { Account, TOKEN_PROGRAM_ID, getAccount } from "@solana/spl-token";
 import { assert } from "chai";
 import { getInitializedUserData } from "../utils/userData";
@@ -25,7 +25,6 @@ type IXAccounts = {
     signerAta: PublicKey,
     userData: PublicKey,
     vault: PublicKey,
-    vaultAuthority: PublicKey,
     mint: PublicKey,
     systemProgram: PublicKey,
     tokenProgram: PublicKey
@@ -37,7 +36,6 @@ async function getDefaultAccounts(noSignerAta?: boolean): Promise<IXAccounts> {
     const signerAta = noSignerAta ? null : await mintData.mintTo(signer.publicKey, depositAmount);
     const userData = SwapUserVault(signer.publicKey, mintData.mint);
     const vault = SwapVault(mintData.mint);
-    const vaultAuthority = SwapVaultAuthority;
     const mint = mintData.mint;
     const systemProgram = SystemProgram.programId;
     const tokenProgram = TOKEN_PROGRAM_ID;
@@ -50,7 +48,6 @@ async function getDefaultAccounts(noSignerAta?: boolean): Promise<IXAccounts> {
         signerAta,
         userData,
         vault,
-        vaultAuthority,
         mint,
         systemProgram,
         tokenProgram
@@ -64,7 +61,6 @@ async function execute(accounts: IXAccounts): Promise<{result: SignatureResult, 
         signerAta: accounts.signerAta,
         userData: accounts.userData,
         vault: accounts.vault,
-        vaultAuthority: accounts.vaultAuthority,
         mint: accounts.mint,
         systemProgram: accounts.systemProgram,
         tokenProgram: accounts.tokenProgram
@@ -221,16 +217,6 @@ describe("swap-program: Deposit", () => {
 
         const otherMintData = await getNewMint();
         accs.vault = await getInitializedVault(otherMintData, depositAmount);
-
-        const {result, error} = await execute(accs);
-
-        assert(error==="ConstraintSeeds", "Transaction should've failed!");
-    });
-
-    parallelTest.it("Wrong mint vault authority - random", async () => {
-        const accs = await getDefaultAccounts();
-
-        accs.vaultAuthority = RandomPDA();
 
         const {result, error} = await execute(accs);
 

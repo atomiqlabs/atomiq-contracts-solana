@@ -1,21 +1,25 @@
+[toolchain]
+anchor_version = "0.29.0"
+solana_version = "1.16.24"
+
 [features]
 seeds = false
 skip-lint = false
 
 [programs.devnet]
-btc_relay = "3KHSHFpEK6bsjg3bqcxQ9qssJYtRCMi2S9TYVe4q6CQc"
+btc_relay = "btc2WHkrjoZU9xzFJupDCmMaUTRHyYTzJE25LvEi9Ls"
 
 [programs.localnet]
-btc_relay = "3KHSHFpEK6bsjg3bqcxQ9qssJYtRCMi2S9TYVe4q6CQc"
+btc_relay = "btc2WHkrjoZU9xzFJupDCmMaUTRHyYTzJE25LvEi9Ls"
 
 [programs.mainnet]
-btc_relay = "3KHSHFpEK6bsjg3bqcxQ9qssJYtRCMi2S9TYVe4q6CQc"
+btc_relay = "btc2WHkrjoZU9xzFJupDCmMaUTRHyYTzJE25LvEi9Ls"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "mainnet"
+cluster = "localnet"
 wallet = "~/mainnet.key"
 
 [scripts]

@@ -2,7 +2,7 @@ import { Keypair, SystemProgram, PublicKey, SignatureResult } from "@solana/web3
 import { AnchorProvider, Program, workspace, BN } from "@coral-xyz/anchor";
 import { SwapProgram } from "../../target/types/swap_program";
 import { TokenMint, getNewMint } from "../utils/tokens";
-import { RandomPDA, SwapUserVault, SwapVault, SwapVaultAuthority } from "../utils/accounts";
+import { RandomPDA, SwapUserVault, SwapVault } from "../utils/accounts";
 import { Account, TOKEN_PROGRAM_ID, getAccount } from "@solana/spl-token";
 import { assert } from "chai";
 import { getInitializedUserData } from "../utils/userData";
@@ -26,7 +26,6 @@ type IXAccounts = {
     signerAta: PublicKey,
     userData: PublicKey,
     vault: PublicKey,
-    vaultAuthority: PublicKey,
     mint: PublicKey,
     tokenProgram: PublicKey
 };
@@ -37,7 +36,6 @@ async function getDefaultAccounts(noSignerAta?: boolean): Promise<IXAccounts> {
     const signerAta = noSignerAta ? null : await mintData.mintTo(signer.publicKey, depositAmount);
     const userData = SwapUserVault(signer.publicKey, mintData.mint);
     const vault = SwapVault(mintData.mint);
-    const vaultAuthority = SwapVaultAuthority;
     const mint = mintData.mint;
     const tokenProgram = TOKEN_PROGRAM_ID;
 
@@ -49,7 +47,6 @@ async function getDefaultAccounts(noSignerAta?: boolean): Promise<IXAccounts> {
         signerAta,
         userData,
         vault,
-        vaultAuthority,
         mint,
         tokenProgram
     };
@@ -62,7 +59,6 @@ async function execute(accounts: IXAccounts, _withdrawAmount?: BN): Promise<{res
         signerAta: accounts.signerAta,
         userData: accounts.userData,
         vault: accounts.vault,
-        vaultAuthority: accounts.vaultAuthority,
         mint: accounts.mint,
         tokenProgram: accounts.tokenProgram
     }).transaction();
@@ -206,18 +202,6 @@ describe("swap-program: Withdraw", () => {
         const {result, error} = await execute(accs);
 
         assert(error==="ConstraintSeeds", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
-    });
-
-    parallelTest.it("Wrong vault authority", async () => {
-        const accs = await getDefaultAccounts();
-
-        await getInitializedUserData(accs.signer, accs.mintData, depositAmount);
-
-        accs.vaultAuthority = RandomPDA();
-
-        const {result, error} = await execute(accs);
-
-        assert(error==="ConstraintTokenOwner", "Invalid transaction error ("+error+"): "+JSON.stringify(result.err));
     });
 
     parallelTest.it("Wrong mint", async () => {

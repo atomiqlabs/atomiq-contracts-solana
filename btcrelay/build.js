@@ -25,7 +25,7 @@ if (!envName || !VALID_ENVS.includes(envName)) {
   process.exit(1);
 }
 
-const keysDir = path.join(projectDir, "keys");
+const keysDir = path.join(projectDir, "keys-v2");
 const targetDeployDir = path.join(projectDir, "target", "deploy");
 const anchorTomlPath = path.join(projectDir, "Anchor.toml");
 const targetKeypairPath = path.join(targetDeployDir, `${PROGRAM_NAME}-keypair.json`);

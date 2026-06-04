@@ -8,4 +8,4 @@ package-lock.json
 test-ledger
 regenKeys.sh
 magicFix.sh
-keys/
+keys*/

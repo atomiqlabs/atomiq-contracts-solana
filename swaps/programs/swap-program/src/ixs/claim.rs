@@ -26,11 +26,15 @@ pub fn process_claim(signer: &Signer, swap_data: &SwapData, ix_sysvar: &AccountI
             {
                 let acc_data = data_acc.try_borrow_data()?;
                 require!(
-                    acc_data[0..32]==signer.key.to_bytes(),
+                    acc_data[0..8]==[0u8; 8],
+                    SwapErrorCode::InvalidDataAccount
+                );
+                require!(
+                    acc_data[8..40]==signer.key.to_bytes(),
                     SwapErrorCode::InvalidUserData
                 );
         
-                event_secret = check_claim(swap_data, ix_sysvar, &acc_data[32..])?;
+                event_secret = check_claim(swap_data, ix_sysvar, &acc_data[40..])?;
             }
             
             let mut acc_balance = data_acc.try_borrow_mut_lamports()?;
@@ -55,6 +59,8 @@ pub fn process_claim(signer: &Signer, swap_data: &SwapData, ix_sysvar: &AccountI
 }
 
 //Verifies if the claim is claimable by the claimer, provided the secret data (tx data or preimage for HTLC), returns the preimage (for HTLC, or TXHASH for PTLC)
+//Note: Intentionally doesn't check whether the swap is already expired, this is in line with HTLC verification on Bitcoin, which also only enforces the timeout
+// on refund paths, and doesn't invalidate the claim path even after the swap is expired.
 pub fn check_claim(swap_data: &SwapData, ix_sysvar: &AccountInfo, secret: &[u8]) -> Result<[u8; 32]> {
     match swap_data.kind {
         SwapType::Htlc => check_claim_htlc(swap_data, secret),
@@ -143,25 +149,32 @@ pub fn check_claim_chain(swap_data: &SwapData, ix_sysvar: &AccountInfo, secret: 
 }
 
 //Handles payout of claimer bounty & paying the rest back to initializer
-pub fn pay_claimer_bounty<'info>(signer: &Signer, initializer: &AccountInfo<'info>, escrow_state: &Account<'info, EscrowState>) -> Result<()> {
+pub fn pay_claimer_bounty<'info>(signer: &Signer, offerer: &AccountInfo<'info>, claimer: &AccountInfo<'info>, escrow_state: &Account<'info, EscrowState>) -> Result<()> {
+    let initializer = if escrow_state.offerer_initializer { offerer.to_account_info() } else { claimer.to_account_info() };
 
-    //Pay out claimer bounty to signer, rest goes back to initializer
-    if escrow_state.claimer_bounty>0 {
-        let data_starting_lamports = escrow_state.to_account_info().lamports();
-
-        let signer_starting_lamports = signer.to_account_info().lamports();
-        **signer.to_account_info().lamports.borrow_mut() = signer_starting_lamports.checked_add(escrow_state.claimer_bounty).unwrap();
-
-        let initializer_starting_lamports = initializer.lamports();
-        **initializer.lamports.borrow_mut() = initializer_starting_lamports.checked_add(data_starting_lamports - escrow_state.claimer_bounty).unwrap();
-        
-        **escrow_state.to_account_info().lamports.borrow_mut() = 0;
+    let mut data_starting_lamports = escrow_state.to_account_info().lamports();
     
-        escrow_state.to_account_info().assign(&system_program::ID);
-        escrow_state.to_account_info().realloc(0, false).unwrap();
-    } else {
-        escrow_state.close(initializer.to_account_info()).unwrap();
+    //Pay the claimer bounty, if provided
+    if escrow_state.claimer_bounty>0 {
+        **signer.lamports.borrow_mut() = signer.lamports().checked_add(escrow_state.claimer_bounty).unwrap();
+        data_starting_lamports = data_starting_lamports.checked_sub(escrow_state.claimer_bounty).unwrap();
     }
+
+    //If the security deposit was larger than the claimer bounty, return that difference to the claimer 
+    if escrow_state.security_deposit>escrow_state.claimer_bounty {
+        let leaves_amount = escrow_state.security_deposit - escrow_state.claimer_bounty;
+        **claimer.lamports.borrow_mut() = claimer.lamports().checked_add(leaves_amount).unwrap();
+        data_starting_lamports = data_starting_lamports.checked_sub(leaves_amount).unwrap();
+    }
+
+    //Any residual amount in the PDA is paid out to the party which originally initiated the PDA
+    if data_starting_lamports>0 {
+        **initializer.lamports.borrow_mut() = initializer.lamports().checked_add(data_starting_lamports).unwrap();
+    }
+
+    **escrow_state.to_account_info().lamports.borrow_mut() = 0;
+    escrow_state.to_account_info().assign(&system_program::ID);
+    escrow_state.to_account_info().realloc(0, false).unwrap();
 
     Ok(())
 

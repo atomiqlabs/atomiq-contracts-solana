@@ -10,7 +10,7 @@ import { getInitializedUserData } from "../utils/userData";
 import { randomBytes, createHash } from "crypto";
 import { EscrowStateType, SwapData, SwapType, SwapTypeEnum, getInitializeDefaultDataNotPayIn, getInitializeDefaultDataPayIn, getInitializedEscrowState, initializeDefaultAmount, initializeExecuteNotPayIn, initializeExecutePayIn } from "../utils/escrowState";
 
-import btcRelayIdl from "../btc_relay.json";
+import btcRelayIdl from "../../../btcrelay/target/idl/btc_relay.json";
 
 const provider: AnchorProvider = AnchorProvider.local();
 export const btcRelayProgram = new Program(btcRelayIdl as any, btcRelayIdl.metadata.address, provider);

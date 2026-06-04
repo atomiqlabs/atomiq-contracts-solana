@@ -159,6 +159,10 @@ pub fn nbits_to_target(nbits: u32) -> [u8; 32] {
 //Calculates difficulty from difficulty target
 //https://en.bitcoin.it/wiki/Difficulty#How_is_difficulty_calculated.3F_What_is_the_difference_between_bdiff_and_pdiff.3F
 // difficulty = MAX_DIFFICULTY/target
+//NOTE: This outputs the difficulty, not an actual chainwork as reported by bitcoin core, the correct
+// computation should use `2**256 / (target + 1)`. However it is completely safe to use the difficulty here
+// since the added precision from using the chainwork is not required for any mainnet deployment, where the
+// difficulty itself is large enough.
 pub fn get_difficulty(target: [u8; 32]) -> [u8; 32] {
 
     //Find leading byte (first non-zero byte)
@@ -212,7 +216,9 @@ pub fn get_difficulty(target: [u8; 32]) -> [u8; 32] {
 // new_difficulty_target = prev_difficulty_target * (timespan / target_timespan)
 pub fn compute_new_nbits(prev_time: u32, start_time: u32, prev_target: &mut [u8; 32]) -> u32 {
 
-    let mut time_span = prev_time - start_time;
+    //Use saturating sub here, to also cover edge cases where start_time > prev_time, which anyway has
+    // no way of happening, but just to be sure and in-line with bitcoin core implementation
+    let mut time_span = prev_time.saturating_sub(start_time);
 
     //Difficulty increase/decrease multiples are clamped between 0.25 (-75%) and 4 (+300%)
     if time_span < TARGET_TIMESPAN_DIV_4 {
@@ -247,10 +253,7 @@ pub fn has_correct_difficulty_target(prev_committed_header: CommittedBlockHeader
         let mut prev_target = nbits_to_target(prev_nbits);
         let prev_time = prev_committed_header.header.timestamp;
         let start_time = prev_committed_header.last_diff_adjustment;
-        msg!("Prev target: {:x?}", prev_target);
         let new_nbits = compute_new_nbits(prev_time, start_time, &mut prev_target);
-        msg!("New computed nbits: {:x?}", new_nbits);
-        msg!("New target: {:x?}", prev_target);
         current_nbits == new_nbits
     } else {
         current_nbits == prev_nbits

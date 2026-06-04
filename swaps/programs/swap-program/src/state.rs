@@ -3,8 +3,21 @@ use crate::SWAP_TYPE_COUNT;
 use crate::structs::SwapData;
 
 //Swap contract between offerer and claimer
-// HTLC (hash-time locked contract) in case of KIND_LN
-// PTLC (proof-time locked contract, where proof is transaction inclusion through bitcoin relay) in case of KIND_CHAIN_*
+// - HTLC (hash-time locked contract) in case of KIND_LN
+// - PTLC (proof-time locked contract, where proof is transaction inclusion through bitcoin relay) in case of KIND_CHAIN_*
+//
+//NOTE: Both, the `claimer_bounty` and `security_deposit` are always considered to be deposited by
+// the claimer (even if the offerer actually deposited them), this is in line with the other EVM and
+// Starknet implementations:
+// - In the refund case, the `security_deposit` is paid out to the offerer, with the claimer getting
+//   back `max(security_deposit, claimer_bounty) - security_deposit`
+// - In the claim case, the `claimer_bounty` is paid out to the claim tx signer (caller), with the
+//   claimer getting back `max(security_deposit, claimer_bounty) - claimer_bounty`
+// - In the cooperative refund case, the full `max(security_deposit, claimer_bounty)` is returned to
+//   the claimer
+// The additional rent exemption lamport amount is always returned to the actual party that initialized
+// the swap, so the initializer always gets `rent_exempt_lamports - max(security_deposit, claimer_bounty)`
+// back if positive.
 #[account]
 pub struct EscrowState {
     pub data: SwapData,
@@ -17,18 +30,21 @@ pub struct EscrowState {
 
     pub mint: Pubkey, //Pubkey of the token mint
 
-    //Bounty for the watchtower claiming the swap (only for KIND_CHAIN & KIND_CHAIN_NONCED).
-    //Alway paid as native Solana, in Lamports
+    //Bounty for the watchtower claiming the swap on behalf of the user.
+    //Alway paid as native SOL, in Lamports
     pub claimer_bounty: u64,
 
     //Security deposit, paid out to offerer in case swap expires and needs to be refunded.
     //Used to cover transaction fee and compensate for time value of money locked up in the contract.
-    //Alway paid as native Solana, in Lamports
-    pub security_deposit: u64
+    //Alway paid as native SOL, in Lamports
+    pub security_deposit: u64,
+
+    //Whether the PDA was initiated by the offerer or claimer
+    pub offerer_initializer: bool
 }
 
 impl EscrowState {
-    pub const SPACE: usize = 8 + 1 + 2 + 8 + 192 + 8 + 8 + 1 + 1 + 8 + 8 + 8 + 1;
+    pub const SPACE: usize = 8 + 1 + 2 + 8 + 192 + 8 + 8 + 1 + 1 + 8 + 8 + 8 + 1 + 1;
 }
 
 //PDA format for storing user's (LP node's) balance and reputation

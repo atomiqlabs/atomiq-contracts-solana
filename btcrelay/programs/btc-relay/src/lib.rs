@@ -12,7 +12,7 @@ mod errors;
 mod structs;
 mod state;
 
-declare_id!("3KHSHFpEK6bsjg3bqcxQ9qssJYtRCMi2S9TYVe4q6CQc");
+declare_id!("btc2WHkrjoZU9xzFJupDCmMaUTRHyYTzJE25LvEi9Ls");
 
 #[program]
 pub mod btc_relay {
@@ -149,9 +149,15 @@ pub mod btc_relay {
         let commit_hash = commited_header.get_commit_hash()?;
 
         let main_state = &mut ctx.accounts.main_state.load_mut()?;
+        let main_state_commit_hash = main_state.get_commitment(commited_header.blockheight);
 
         require!(
-            commit_hash == main_state.get_commitment(commited_header.blockheight),
+            main_state_commit_hash != [0; 32],
+            RelayErrorCode::UnknownBlockheight
+        );
+
+        require!(
+            commit_hash == main_state_commit_hash,
             RelayErrorCode::PrevBlockCommitment
         );
 
@@ -182,14 +188,23 @@ pub mod btc_relay {
             //Compute commit hash
             block_commit_hash = last_commited_header.get_commit_hash()?;
 
-            //Store and emit
+            //Store
             main_state.store_block_commitment(block_height, block_commit_hash);
-            emit!(StoreFork {
-                fork_id,
+
+            //Emit event - here we can already emit main chain submission events
+            emit!(StoreHeader {
                 block_hash: last_block_hash,
                 commit_hash: block_commit_hash,
                 header: last_commited_header
             });
+        }
+
+        //In case the fork has made the chain shorter we should also set all the
+        // "future" commitments to [0; 32]
+        if block_height < main_state.block_height {
+            for height in (block_height + 1)..=main_state.block_height {
+                main_state.store_block_commitment(height, [0; 32]);
+            }
         }
 
         //Verify if fork chain's work exceeded main chain's work
@@ -205,6 +220,14 @@ pub mod btc_relay {
         main_state.tip_commit_hash = block_commit_hash;
         main_state.tip_block_hash = last_block_hash;
         main_state.fork_counter = fork_id+1;
+
+        //Emit chain reorg
+        emit!(ChainReorg {
+            fork_id,
+            start_height: commited_header.blockheight,
+            tip_block_hash: last_block_hash,
+            tip_commit_hash: block_commit_hash
+        });
 
         Ok(())
     }
@@ -257,15 +280,23 @@ pub mod btc_relay {
 
                 main_state.fork_counter = fork_id+1;
 
+                let main_state_commitment = main_state.get_commitment(commited_header.blockheight);
+                require!(
+                    main_state_commitment != [0; 32],
+                    RelayErrorCode::UnknownBlockheight
+                );
+
                 //Verify commited header was indeed committed,
                 // the latest common ancestor block, right before the fork occurred
                 require!(
-                    commit_hash == main_state.get_commitment(commited_header.blockheight),
+                    commit_hash == main_state_commitment,
                     RelayErrorCode::PrevBlockCommitment
                 );
 
                 fork_state.initialized = 1;
                 fork_state.start_height = block_height;
+                //Save the commitment for the last block that is also in the main chain
+                fork_state.store_block_commitment(commit_hash);
             } else {
                 //Verify commited header was indeed committed in the fork state
                 require!(
@@ -306,15 +337,32 @@ pub mod btc_relay {
             if arrayutils::gt_arr(last_commited_header.chain_work, main_state.chain_work) {
                 //Successful fork, fork's work exceeded main chain's work
 
-                msg!("Successful fork...");
+                let start_height = fork_state.start_height;
+
+                let main_state_start_commitment = main_state.get_commitment(start_height);
+                require!(
+                    main_state_start_commitment != [0; 32],
+                    RelayErrorCode::UnknownBlockheight
+                );
+
+                //Verify that the fork's root block is still committed in the main chain
+                require!(
+                    fork_state.block_commitments[0] == main_state_start_commitment,
+                    RelayErrorCode::ForkRootBlockNotInMainChain
+                );
 
                 //Overwrite block commitments in main chain
-                let start_height = fork_state.start_height;
-                for i in 0..fork_state.length {
-                    main_state.store_block_commitment(start_height+1+i, fork_state.block_commitments[i as usize]);
+                for i in 1..fork_state.length {
+                    main_state.store_block_commitment(start_height+i, fork_state.block_commitments[i as usize]);
                 }
-
-                msg!("Commitments stored...");
+                
+                //In case the fork has made the chain shorter we should also set all the
+                // "future" commitments to [0; 32]
+                if block_height < main_state.block_height {
+                    for height in (block_height + 1)..=main_state.block_height {
+                        main_state.store_block_commitment(height, [0; 32]);
+                    }
+                }
 
                 //Update main state with fork's state
                 main_state.last_diff_adjustment = last_commited_header.last_diff_adjustment;
@@ -322,8 +370,6 @@ pub mod btc_relay {
                 main_state.chain_work = last_commited_header.chain_work;
                 main_state.tip_commit_hash = block_commit_hash;
                 main_state.tip_block_hash = last_block_hash;
-
-                msg!("Main state updated");
 
                 //Close the fork PDA
                 close = true;
@@ -343,7 +389,6 @@ pub mod btc_relay {
 
         if close {
             ctx.accounts.fork_state.close(ctx.accounts.signer.to_account_info())?;
-            msg!("Account closed");
         }
 
         Ok(())
@@ -370,13 +415,21 @@ pub mod btc_relay {
             let main_state = ctx.accounts.main_state.load()?;
 
             require!(
-                main_state.block_height - block_height + 1 >= confirmations,
+                //Equivalent to main_state.block_height - block_height + 1 >= confirmations
+                main_state.block_height.checked_add(1).unwrap() >= confirmations.checked_add(block_height).unwrap(),
                 RelayErrorCode::BlockConfirmations
             );
 
             let commit_hash = commited_header.get_commit_hash()?;
+
+            let main_state_commit_hash = main_state.get_commitment(block_height);
             require!(
-                commit_hash == main_state.get_commitment(block_height),
+                main_state_commit_hash != [0; 32],
+                RelayErrorCode::UnknownBlockheight
+            );
+
+            require!(
+                commit_hash == main_state_commit_hash,
                 RelayErrorCode::PrevBlockCommitment
             );
 

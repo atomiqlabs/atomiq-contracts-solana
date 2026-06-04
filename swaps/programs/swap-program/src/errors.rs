@@ -37,7 +37,7 @@ pub enum SwapErrorCode {
 
     #[msg("Invalid data account")]
     InvalidDataAccount,
-    #[msg("Invalid user data account")]
+    #[msg("Invalid user in data account")]
     InvalidUserData,
 
     #[msg("Invalid program id for blockheight verification.")]
